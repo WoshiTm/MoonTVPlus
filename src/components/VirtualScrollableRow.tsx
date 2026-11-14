@@ -97,7 +97,7 @@ export default function VirtualScrollableRow({
       <div
         ref={containerRef}
         className={`flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth ${className}`}
-        style={{ scrollBehavior: 'smooth', paddingTop: '20px', paddingBottom: '20px', marginTop: '-20px', marginBottom: '-20px' }}
+        style={{ scrollBehavior: 'smooth', paddingTop: '20px', paddingBottom: '20px', marginTop: '-20px', marginBottom: '-20px', paddingLeft: '8px', paddingRight: '8px', marginLeft: '-8px', marginRight: '-8px' }}
       >
         {/* 左侧占位符（用于保持滚动位置） */}
         {visibleRange.start > 0 && (

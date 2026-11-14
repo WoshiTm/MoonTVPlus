@@ -225,7 +225,6 @@ export default function WatchRoomMusicPage() {
   const { currentRoom, isOwner, socket } = watchRoom;
   const audioRef = useRef<HTMLAudioElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const frameRef = useRef<number | null>(null);
   const lastSongKeyRef = useRef('');
@@ -337,23 +336,10 @@ export default function WatchRoomMusicPage() {
     }
   }, [volume]);
 
+  // 注意：不要把 audio 元素接入 AudioContext，原因同主音乐页：跨域地址无跨域许可时，
+  // createMediaElementSource 会让节点输出静默。元素直接播放。
   const ensureAnalyser = async () => {
-    const audio = audioRef.current;
-    if (!audio || typeof window === 'undefined') return;
-    const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-
-    if (!audioContextRef.current) audioContextRef.current = new AudioContextClass();
-    if (!mediaSourceRef.current) mediaSourceRef.current = audioContextRef.current.createMediaElementSource(audio);
-    if (!analyserRef.current) {
-      const analyser = audioContextRef.current.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.82;
-      mediaSourceRef.current.connect(analyser);
-      analyser.connect(audioContextRef.current.destination);
-      analyserRef.current = analyser;
-    }
-    if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+    return;
   };
 
   const applyPlaybackState = async (nextState: MusicSyncState) => {

@@ -2114,55 +2114,11 @@ export default function MusicClient({ children: _children }: { children?: React.
 
     let cancelled = false;
 
+    // 注意：不要把 audio 元素接入 AudioContext。音乐地址全部跨域且无跨域许可，
+    // 按 Web Audio 规范，createMediaElementSource 会让节点输出静默（进度走、无声、
+    // 频谱读零、零报错）。元素直接播放，频谱走下面的模拟动画。
     const ensureAnalyser = async () => {
-      try {
-        const AudioContextClass = window.AudioContext || (window as typeof window & {
-          webkitAudioContext?: typeof AudioContext;
-        }).webkitAudioContext;
-
-        if (!AudioContextClass) return;
-
-        if (!audioContextRef.current) {
-          audioContextRef.current = new AudioContextClass();
-        }
-
-        if (!mediaSourceRef.current) {
-          mediaSourceRef.current = audioContextRef.current.createMediaElementSource(audio);
-        }
-
-        if (!analyserRef.current) {
-          const context = audioContextRef.current;
-          const eqFilters = EQ_BANDS.map((band) => {
-            const filter = context.createBiquadFilter();
-            filter.type = 'peaking'; filter.frequency.value = band.frequency; filter.Q.value = 1.4; filter.gain.value = 0;
-            return filter;
-          });
-          eqFilters.forEach((filter, index) => index === 0 ? mediaSourceRef.current?.connect(filter) : eqFilters[index - 1].connect(filter));
-          const lastEq = eqFilters[eqFilters.length - 1];
-          const dryGain = context.createGain(); const wetGain = context.createGain();
-          const convolver = context.createConvolver();
-          const impulse = context.createBuffer(2, Math.floor(context.sampleRate * 1.6), context.sampleRate);
-          for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
-            const data = impulse.getChannelData(channel);
-            for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2.2);
-          }
-          convolver.buffer = impulse; lastEq.connect(dryGain); lastEq.connect(convolver); convolver.connect(wetGain);
-          const mixer = context.createGain(); dryGain.connect(mixer); wetGain.connect(mixer);
-          const compressor = context.createDynamicsCompressor(); compressor.threshold.value = 0; compressor.knee.value = 0; compressor.ratio.value = 1; compressor.attack.value = 0.003; compressor.release.value = 0.25; mixer.connect(compressor);
-          const loudnessGain = context.createGain(); compressor.connect(loudnessGain);
-          const panner = context.createPanner();
-          panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse'; panner.refDistance = 1; panner.maxDistance = 20; panner.rolloffFactor = 0.5;
-          panner.positionX.value = 0; panner.positionY.value = 0; panner.positionZ.value = 0;
-          const analyser = context.createAnalyser(); analyser.fftSize = 512; analyser.smoothingTimeConstant = 0.8; loudnessGain.connect(panner); panner.connect(analyser); analyser.connect(context.destination);
-          eqFiltersRef.current = eqFilters; convolverRef.current = convolver; dryGainRef.current = dryGain; wetGainRef.current = wetGain; compressorRef.current = compressor; loudnessGainRef.current = loudnessGain; pannerRef.current = panner; analyserRef.current = analyser; spectrumDataRef.current = new Uint8Array(analyser.frequencyBinCount);
-        }
-
-        if (audioContextRef.current.state === 'suspended') {
-          await audioContextRef.current.resume();
-        }
-      } catch (error) {
-        console.warn('初始化频谱分析器失败，将使用模拟动画:', error);
-      }
+      return;
     };
 
     const tick = () => {

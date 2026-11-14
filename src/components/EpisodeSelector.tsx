@@ -18,7 +18,7 @@ import React, {
   useState,
 } from 'react';
 
-import type { DanmakuComment,DanmakuEpisode,DanmakuSelection } from '@/lib/danmaku/types';
+import type { DanmakuComment,DanmakuEpisode,DanmakuSelection,DanmakuSettings } from '@/lib/danmaku/types';
 import { generateStorageKey, getCachedPlayRecordsSnapshot } from '@/lib/db.client';
 import { isEpisodeHiddenByFilter } from '@/lib/episode-filter';
 import { loadAllLocalEpisodeProgressRecords } from '@/lib/episode-progress';
@@ -27,6 +27,7 @@ import { EpisodeFilterConfig,SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, SpeedTestError } from '@/lib/utils';
 import type { SpeedTestErrorType } from '@/lib/utils';
 
+import DanmakuDisplaySettings from '@/components/DanmakuDisplaySettings';
 import DanmakuPanel from '@/components/DanmakuPanel';
 import EpisodeFilterSettings from '@/components/EpisodeFilterSettings';
 import EpisodeTitleCorrectDialog from '@/components/EpisodeTitleCorrectDialog';
@@ -286,6 +287,9 @@ interface EpisodeSelectorProps {
   onUploadDanmaku?: (comments: DanmakuComment[]) => void;
   /** 手动选集弹幕时回传该源的完整分集列表，供刷新分集标题 */
   onDanmakuEpisodesLoaded?: (episodes: DanmakuEpisode[]) => void;
+  /** 弹幕显示设置（字号/速度/透明度/边距） */
+  danmakuSettings?: DanmakuSettings;
+  onDanmakuDisplaySettingsChange?: (patch: Partial<DanmakuSettings>) => void;
   /** 观影室房员状态 - 禁用选集和换源，但保留弹幕 */
   isRoomMember?: boolean;
   /** 外层使用 TMDB 背景图时，提升深色文字对比度 */
@@ -320,6 +324,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   currentDanmakuSelection,
   onUploadDanmaku,
   onDanmakuEpisodesLoaded,
+  danmakuSettings,
+  onDanmakuDisplaySettingsChange,
   isRoomMember = false,
   useLightTextOnBackdrop = false,
   episodeFilterConfig = null,
@@ -1099,15 +1105,24 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       {/* 弹幕 Tab 内容 */}
       {activeTab === 'danmaku' && onDanmakuSelect && (
-        <div className='flex-1 min-h-0 overflow-hidden'>
-          <DanmakuPanel
-            videoTitle={videoTitle || ''}
-            currentEpisodeIndex={value - 1}
-            onDanmakuSelect={onDanmakuSelect}
-            currentSelection={currentDanmakuSelection || null}
-            onUploadDanmaku={onUploadDanmaku}
-            onEpisodesLoaded={onDanmakuEpisodesLoaded}
-          />
+        <div className='flex-1 min-h-0 overflow-hidden flex flex-col'>
+          <div className='flex-1 min-h-0 overflow-hidden'>
+            <DanmakuPanel
+              videoTitle={videoTitle || ''}
+              currentEpisodeIndex={value - 1}
+              onDanmakuSelect={onDanmakuSelect}
+              currentSelection={currentDanmakuSelection || null}
+              onUploadDanmaku={onUploadDanmaku}
+              onEpisodesLoaded={onDanmakuEpisodesLoaded}
+            />
+          </div>
+          {danmakuSettings && onDanmakuDisplaySettingsChange && (
+            <DanmakuDisplaySettings
+              settings={danmakuSettings}
+              onChange={onDanmakuDisplaySettingsChange}
+              lightText={useLightTextOnBackdrop}
+            />
+          )}
         </div>
       )}
 

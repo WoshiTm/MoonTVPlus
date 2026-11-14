@@ -1,21 +1,14 @@
 'use client';
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { Play, Volume2, VolumeX } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Autoplay } from 'swiper/modules';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import type { Swiper as SwiperType } from 'swiper';
+
+import 'swiper/css';
 
 import {
   type TMDBItem,
@@ -31,27 +24,13 @@ interface BannerCarouselProps {
   delayLoad?: boolean; // 是否延迟加载（等页面加载完毕后再加载）
 }
 
-type HomeBannerHeightScale = '1' | '1.5' | '2';
-
-const bannerHeightClassMap: Record<HomeBannerHeightScale, string> = {
-  '1': 'h-[200px] sm:h-[300px] md:h-[400px] lg:h-[500px]',
-  '1.5': 'h-[300px] sm:h-[450px] md:h-[600px] lg:h-[750px]',
-  '2': 'h-[400px] sm:h-[600px] md:h-[800px] lg:h-[1000px]',
-};
-
-const getSavedBannerHeightScale = (): HomeBannerHeightScale => {
-  if (typeof window === 'undefined') return '1';
-
-  const saved = localStorage.getItem('homeBannerHeightScale');
-  return saved === '1.5' || saved === '2' ? saved : '1';
-};
-
 // 扩展TMDBItem类型以支持TX数据源的额外字段
 interface BannerItem extends TMDBItem {
   subtitle?: string; // TX数据源的子标题
   tags?: string[]; // TX数据源的标签
   trailer_url?: string | null; // 豆瓣预告片直链
   genres?: string[]; // 豆瓣数据源的类型标签
+  logo_path?: string | null; // TMDB logo 图
 }
 
 export default function BannerCarousel({
@@ -63,32 +42,19 @@ export default function BannerCarousel({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [shouldLoad, setShouldLoad] = useState(!delayLoad); // 是否应该开始加载数据
-  const [isPaused, setIsPaused] = useState(false);
-  const [skipNextAutoPlay, setSkipNextAutoPlay] = useState(false); // 跳过下一次自动播放
   const [isYouTubeAccessible, setIsYouTubeAccessible] = useState(false); // YouTube连通性（默认false，检查后再决定）
   const [enableTrailers, setEnableTrailers] = useState(false); // 是否启用预告片（默认关闭）
   const [dataSource, setDataSource] = useState<string>(''); // 当前数据源
   const [trailersLoaded, setTrailersLoaded] = useState(false); // 预告片是否已加载
   const [isMuted, setIsMuted] = useState(true); // 视频是否静音（默认静音）
-  const [bannerHeightScale, setBannerHeightScale] =
-    useState<HomeBannerHeightScale>('1'); // 轮播图高度倍率
-  const [isMobileView, setIsMobileView] = useState(false);
-  const [mobileTitleFontSize, setMobileTitleFontSize] = useState(30);
-  const videoRef = useRef<HTMLVideoElement>(null); // 视频元素引用
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map()); // 所有视频元素的引用
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const titleTextRef = useRef<HTMLSpanElement>(null);
-  const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
-  const isManualChange = useRef(false); // 标记是否为手动切换
 
   // LocalStorage 缓存配置
   const LOCALSTORAGE_DURATION = 24 * 60 * 60 * 1000; // 1天
-  const currentTitle = items[currentIndex]?.title || '';
 
-  // 根据数据源获取缓存key
+  // 根据数据源获取缓存key（v3：背景图改为无字背景图，与旧缓存隔离）
   const getLocalStorageKey = (source: string) => {
-    return `banner_trending_cache_${source}`;
+    return `banner_trending_cache_v3_${source}`;
   };
 
   // 跳转到播放页面
@@ -136,64 +102,7 @@ export default function BannerCarousel({
     if (setting !== null) {
       setEnableTrailers(setting === 'true');
     }
-
-    setBannerHeightScale(getSavedBannerHeightScale());
-
-    const handleHomeModulesUpdated = () => {
-      setBannerHeightScale(getSavedBannerHeightScale());
-    };
-
-    window.addEventListener('homeModulesUpdated', handleHomeModulesUpdated);
-    return () => {
-      window.removeEventListener(
-        'homeModulesUpdated',
-        handleHomeModulesUpdated
-      );
-    };
   }, []);
-
-  // 检测移动端视口，用于 1x 高度下的标题自适应
-  useEffect(() => {
-    const updateIsMobileView = () => {
-      setIsMobileView(window.innerWidth < 768);
-    };
-
-    updateIsMobileView();
-    window.addEventListener('resize', updateIsMobileView);
-    return () => window.removeEventListener('resize', updateIsMobileView);
-  }, []);
-
-  // 手机界面且轮播图高度为 1x 时，仅在标题超过一行时自动缩小字号，不改变布局位置
-  useLayoutEffect(() => {
-    const titleElement = titleRef.current;
-    const titleTextElement = titleTextRef.current;
-    if (!titleElement || !titleTextElement) return;
-
-    if (bannerHeightScale !== '1' || !isMobileView) {
-      titleElement.style.fontSize = '';
-      setMobileTitleFontSize(30);
-      return;
-    }
-
-    const maxFontSize = 30;
-    const minFontSize = 12;
-    let nextFontSize = maxFontSize;
-
-    titleElement.style.fontSize = `${nextFontSize}px`;
-
-    while (
-      nextFontSize > minFontSize &&
-      titleTextElement.getClientRects().length > 1
-    ) {
-      nextFontSize -= 1;
-      titleElement.style.fontSize = `${nextFontSize}px`;
-    }
-
-    titleElement.style.fontSize = `${nextFontSize}px`;
-    setMobileTitleFontSize(nextFontSize);
-
-    return undefined;
-  }, [bannerHeightScale, currentTitle, isMobileView]);
 
   // 延迟加载：等待页面加载完毕后再开始加载轮播图数据
   useEffect(() => {
@@ -323,6 +232,7 @@ export default function BannerCarousel({
     };
 
     fetchTrending();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldLoad]);
 
   // 前端获取豆瓣预告片
@@ -395,95 +305,9 @@ export default function BannerCarousel({
     });
   }, [currentIndex, isMuted]);
 
-  // 自动播放
-  useEffect(() => {
-    if (!items.length || isPaused) return;
-
-    const timer = setInterval(() => {
-      // 如果设置了跳过标志，跳过这一次自动播放
-      if (skipNextAutoPlay) {
-        setSkipNextAutoPlay(false);
-        return;
-      }
-
-      setCurrentIndex((prev) => (prev + 1) % items.length);
-    }, autoPlayInterval);
-
-    return () => clearInterval(timer);
-  }, [items.length, isPaused, autoPlayInterval, skipNextAutoPlay]);
-
-  const goToPrevious = useCallback(() => {
-    isManualChange.current = true;
-    setSkipNextAutoPlay(true);
-    setCurrentIndex((prev) => (prev - 1 + items.length) % items.length);
-    setTimeout(() => {
-      isManualChange.current = false;
-    }, 100);
-  }, [items.length]);
-
-  const goToNext = useCallback(() => {
-    isManualChange.current = true;
-    setSkipNextAutoPlay(true);
-    setCurrentIndex((prev) => (prev + 1) % items.length);
-    setTimeout(() => {
-      isManualChange.current = false;
-    }, 100);
-  }, [items.length]);
-
-  const goToSlide = useCallback((index: number) => {
-    isManualChange.current = true;
-    setSkipNextAutoPlay(true);
-    setCurrentIndex(index);
-    setTimeout(() => {
-      isManualChange.current = false;
-    }, 100);
-  }, []);
-
-  // 触摸事件处理
-  const handleTouchStart = (e: React.TouchEvent) => {
-    // 防止在手动切换过程中触发
-    if (isManualChange.current) return;
-    touchStartX.current = e.touches[0].clientX;
-    touchEndX.current = 0; // 重置结束位置
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    // 防止在手动切换过程中触发
-    if (isManualChange.current) return;
-    touchEndX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = () => {
-    // 防止在手动切换过程中触发
-    if (isManualChange.current) return;
-    if (!touchStartX.current) return;
-
-    // 如果有滑动，则执行滑动逻辑
-    if (touchEndX.current !== 0) {
-      const distance = touchStartX.current - touchEndX.current;
-      const minSwipeDistance = 50; // 最小滑动距离
-
-      if (Math.abs(distance) > minSwipeDistance) {
-        if (distance > 0) {
-          // 向左滑动，显示下一张
-          goToNext();
-        } else {
-          // 向右滑动，显示上一张
-          goToPrevious();
-        }
-      }
-    }
-
-    // 重置
-    touchStartX.current = 0;
-    touchEndX.current = 0;
-  };
-
   if (isLoading || !shouldLoad) {
     return (
-      <div
-        className={`relative w-full ${bannerHeightClassMap[bannerHeightScale]} bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 overflow-hidden flex items-center justify-center`}
-      >
+      <div className='relative w-full aspect-[4/3] md:aspect-[16/9] lg:aspect-[9/4] bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-900 overflow-hidden rounded-lg flex items-center justify-center'>
         <Image
           src='/logo.png'
           alt='MoonTVPlus'
@@ -503,178 +327,287 @@ export default function BannerCarousel({
   const currentItem = items[currentIndex];
 
   return (
-    <div
-      className={`relative w-full ${bannerHeightClassMap[bannerHeightScale]} overflow-hidden group`}
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onClick={() => {
-        // 移动端点击整个轮播图跳转
-        if (window.innerWidth < 768) {
-          handlePlay(currentItem.title);
-        }
-      }}
-    >
-      {/* 背景图片或视频 */}
-      <div className='absolute inset-0'>
-        {items.map((item, index) => (
-          <div
-            key={item.id}
-            className={`absolute inset-0 transition-opacity duration-1000 ${
-              index === currentIndex ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            {item.trailer_url && enableTrailers ? (
-              /* 显示豆瓣直链视频 */
-              <div className='absolute inset-0 overflow-hidden'>
-                <video
-                  ref={(el) => {
-                    if (el) {
-                      videoRefs.current.set(index, el);
-                    } else {
-                      videoRefs.current.delete(index);
-                    }
-                  }}
-                  src={getVideoUrl(item.trailer_url) || undefined}
-                  className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover'
-                  muted={isMuted}
-                  loop
-                  playsInline
-                  preload='metadata'
-                />
-              </div>
-            ) : item.video_key && isYouTubeAccessible && enableTrailers ? (
-              /* 显示YouTube视频 */
-              <div className='absolute inset-0 overflow-hidden'>
-                <iframe
-                  src={`https://www.youtube.com/embed/${item.video_key}?listType=playlist&autoplay=1&mute=1&controls=0&loop=1&playlist=${item.video_key}&modestbranding=1&rel=0&showinfo=0&vq=hd1080&hd=1&disablekb=1&fs=0&iv_load_policy=3`}
-                  className='absolute top-1/2 left-1/2 pointer-events-none'
-                  allow='autoplay; encrypted-media'
-                  style={{
-                    border: 'none',
-                    width: '100vw',
-                    height: '100vh',
-                    minWidth: '100%',
-                    minHeight: '100%',
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                />
-              </div>
-            ) : (
-              /* 显示图片 */
-              <ProxyImage
-                originalSrc={getImageUrl(
-                  item.backdrop_path || item.poster_path
-                )}
-                alt={item.title}
-                className='absolute inset-0 w-full h-full object-cover'
-                loading={index === 0 ? 'eager' : 'lazy'}
-              />
-            )}
-            {/* 渐变遮罩 */}
-            <div className='absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent'></div>
-            <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent'></div>
-          </div>
-        ))}
-      </div>
-
-      {/* 内容信息 */}
-      <div className='absolute inset-0 flex items-end p-8 md:p-12 pointer-events-none'>
-        <div className='max-w-2xl space-y-4'>
-          <h2
-            ref={titleRef}
-            className='text-3xl md:text-5xl font-bold text-white drop-shadow-lg'
-            style={
-              isMobileView && bannerHeightScale === '1'
-                ? { fontSize: `${mobileTitleFontSize}px` }
-                : undefined
-            }
-          >
-            <span ref={titleTextRef}>{currentItem.title}</span>
-          </h2>
-
-          <div className='flex items-center gap-2 md:gap-3 text-sm md:text-base text-white/90 flex-wrap'>
-            {currentItem.vote_average > 0 && (
-              <span className='px-2 py-1 bg-yellow-500 text-black font-semibold rounded'>
-                {currentItem.vote_average.toFixed(1)}
-              </span>
-            )}
-            {/* 显示标签：优先TX的tags，其次豆瓣的genres，最后TMDB的genre_ids */}
-            {currentItem.tags && currentItem.tags.length > 0
-              ? currentItem.tags.slice(0, 3).map((tag, index) => (
-                  <span
-                    key={index}
-                    className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
-                  >
-                    {tag}
-                  </span>
-                ))
-              : currentItem.genres &&
-                Array.isArray(currentItem.genres) &&
-                currentItem.genres.length > 0
-              ? /* 显示豆瓣数据源的标签 */
-                currentItem.genres.slice(0, 3).map((genre, index) => (
-                  <span
-                    key={index}
-                    className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
-                  >
-                    {genre}
-                  </span>
-                ))
-              : /* 显示TMDB数据源的类型标签 */
-                getGenreNames(currentItem.genre_ids, 3).map((genre) => (
-                  <span
-                    key={genre}
-                    className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
-                  >
-                    {genre}
-                  </span>
-                ))}
-            {currentItem.release_date && (
-              <span>{currentItem.release_date}</span>
-            )}
-          </div>
-
-          {/* PC端播放按钮 */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePlay(currentItem.title);
-            }}
-            className='hidden md:flex items-center gap-2 px-6 py-3 bg-gray-500/30 hover:bg-gray-500/50 backdrop-blur-sm text-white font-semibold rounded-lg transition-all pointer-events-auto'
-          >
-            <Play className='w-5 h-5 fill-white' />
-            立即播放
-          </button>
-
-          {currentItem.overview && (
-            <p className='text-sm md:text-base text-white/80 line-clamp-3 drop-shadow-md'>
-              {currentItem.overview}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* 左右切换按钮 - 只在桌面端显示 */}
-      <button
-        onClick={goToPrevious}
-        className='hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/30 hover:bg-black/60 text-white rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300'
-        aria-label='上一张'
+    <div className='relative w-full aspect-[4/3] md:aspect-[16/9] lg:aspect-[9/4] overflow-hidden rounded-lg'>
+      <Swiper
+        modules={[Autoplay]}
+        autoplay={{
+          delay: autoPlayInterval,
+          disableOnInteraction: false,
+          pauseOnMouseEnter: true,
+        }}
+        loop={items.length > 1}
+        slidesPerView={1}
+        speed={700}
+        onSlideChange={(swiper: SwiperType) => setCurrentIndex(swiper.realIndex)}
+        className='h-full w-full'
       >
-        <ChevronLeft className='w-8 h-8' />
-      </button>
-      <button
-        onClick={goToNext}
-        className='hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/30 hover:bg-black/60 text-white rounded-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300'
-        aria-label='下一张'
-      >
-        <ChevronRight className='w-8 h-8' />
-      </button>
+        {items.map((item, index) => {
+          const isActive = index === currentIndex;
+          return (
+            <SwiperSlide key={item.id} className='h-full'>
+              <div
+                className='relative h-full w-full'
+                onClick={() => {
+                  // 移动端点击整个轮播图跳转
+                  if (window.innerWidth < 768) {
+                    handlePlay(item.title);
+                  }
+                }}
+              >
+                {/* 背景图片或视频 */}
+                <div className='absolute inset-0 overflow-hidden'>
+                  {item.trailer_url && enableTrailers ? (
+                    /* 显示豆瓣直链视频 */
+                    <video
+                      ref={(el) => {
+                        if (el) {
+                          videoRefs.current.set(index, el);
+                        } else {
+                          videoRefs.current.delete(index);
+                        }
+                      }}
+                      src={getVideoUrl(item.trailer_url) || undefined}
+                      className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-full min-h-full w-auto h-auto object-cover'
+                      muted={isMuted}
+                      loop
+                      playsInline
+                      preload='metadata'
+                    />
+                  ) : item.video_key &&
+                    isYouTubeAccessible &&
+                    enableTrailers ? (
+                    /* 显示YouTube视频 */
+                    <iframe
+                      src={`https://www.youtube.com/embed/${item.video_key}?listType=playlist&autoplay=1&mute=1&controls=0&loop=1&playlist=${item.video_key}&modestbranding=1&rel=0&showinfo=0&vq=hd1080&hd=1&disablekb=1&fs=0&iv_load_policy=3`}
+                      className='absolute top-1/2 left-1/2 pointer-events-none'
+                      allow='autoplay; encrypted-media'
+                      style={{
+                        border: 'none',
+                        width: '100vw',
+                        height: '100vh',
+                        minWidth: '100%',
+                        minHeight: '100%',
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                    />
+                  ) : (
+                    /* 显示图片 */
+                    <ProxyImage
+                      originalSrc={getImageUrl(
+                        item.backdrop_path || item.poster_path
+                      )}
+                      alt={item.title}
+                      className='absolute inset-0 w-full h-full object-cover'
+                      loading={index === 0 ? 'eager' : 'lazy'}
+                    />
+                  )}
+                </div>
+
+                {/* 遮罩层 - 移动端/平板从下到上渐变 */}
+                <div
+                  className={`absolute inset-0 flex min-h-0 flex-col justify-end rounded-lg bg-gradient-to-t from-black/90 via-black/50 via-60% to-transparent px-6 pt-4 pb-6 transition-opacity duration-500 ease-out md:px-8 md:pb-8 lg:hidden ${
+                    isActive ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  {/* Logo图片或标题文字 */}
+                  <div
+                    className={`mb-3 flex shrink-0 items-end transition-all delay-100 duration-500 ease-out md:mb-4 ${
+                      isActive
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-4 opacity-0'
+                    }`}
+                  >
+                    {item.logo_path ? (
+                      <img
+                        src={getTMDBImageUrl(item.logo_path, 'w500')}
+                        alt={item.title}
+                        className='max-h-12 max-w-[180px] object-contain md:max-h-16 md:max-w-[240px]'
+                      />
+                    ) : (
+                      <h2 className='text-xl font-bold text-white md:text-2xl'>
+                        {item.title}
+                      </h2>
+                    )}
+                  </div>
+
+                  {/* 评分与标签 */}
+                  <div
+                    className={`mb-2 flex flex-wrap items-center gap-2 text-xs text-white/90 transition-all delay-150 duration-500 ease-out md:text-sm ${
+                      isActive
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-4 opacity-0'
+                    }`}
+                  >
+                    {item.vote_average > 0 && (
+                      <span className='px-2 py-1 bg-yellow-500 text-black font-semibold rounded'>
+                        {item.vote_average.toFixed(1)}
+                      </span>
+                    )}
+                    {item.tags && item.tags.length > 0
+                      ? item.tags.slice(0, 3).map((tag, tagIndex) => (
+                          <span
+                            key={tagIndex}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded'
+                          >
+                            {tag}
+                          </span>
+                        ))
+                      : item.genres &&
+                        Array.isArray(item.genres) &&
+                        item.genres.length > 0
+                      ? item.genres.slice(0, 3).map((genre, genreIndex) => (
+                          <span
+                            key={genreIndex}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded'
+                          >
+                            {genre}
+                          </span>
+                        ))
+                      : getGenreNames(item.genre_ids, 3).map((genre) => (
+                          <span
+                            key={genre}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded'
+                          >
+                            {genre}
+                          </span>
+                        ))}
+                    {item.release_date && <span>{item.release_date}</span>}
+                  </div>
+
+                  {/* 介绍 */}
+                  {item.overview && (
+                    <p
+                      className={`mb-2 line-clamp-2 min-h-0 shrink text-xs text-white/80 transition-all delay-150 duration-500 ease-out md:mb-4 md:line-clamp-3 md:max-w-md md:text-sm ${
+                        isActive
+                          ? 'translate-y-0 opacity-100'
+                          : 'translate-y-4 opacity-0'
+                      }`}
+                    >
+                      {item.overview}
+                    </p>
+                  )}
+
+                  {/* 平板端播放按钮（原有按钮，保持不变；手机端点整图播放） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePlay(item.title);
+                    }}
+                    className={`hidden md:flex w-fit shrink-0 items-center gap-2 px-5 py-2.5 bg-gray-500/30 hover:bg-gray-500/50 backdrop-blur-sm text-white font-semibold rounded-lg transition-all delay-200 duration-500 ease-out pointer-events-auto ${
+                      isActive
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-4 opacity-0'
+                    }`}
+                  >
+                    <Play className='w-5 h-5 fill-white' />
+                    立即播放
+                  </button>
+                </div>
+
+                {/* 遮罩层 - 桌面端从左到右渐变 */}
+                <div
+                  className={`absolute inset-0 hidden flex-col justify-end rounded-lg bg-gradient-to-r from-black/90 via-black/50 via-40% to-transparent px-16 pt-24 pb-16 transition-opacity duration-500 ease-out lg:flex ${
+                    isActive ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  {/* Logo图片或标题文字 */}
+                  <div
+                    className={`mb-8 flex h-32 items-end transition-all delay-100 duration-500 ease-out ${
+                      isActive
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-4 opacity-0'
+                    }`}
+                  >
+                    {item.logo_path ? (
+                      <img
+                        src={getTMDBImageUrl(item.logo_path, 'w500')}
+                        alt={item.title}
+                        className='max-h-32 max-w-md object-contain xl:max-h-36 xl:max-w-lg'
+                      />
+                    ) : (
+                      <h2 className='text-2xl font-bold text-white md:text-4xl lg:text-5xl'>
+                        {item.title}
+                      </h2>
+                    )}
+                  </div>
+
+                  {/* 评分与标签 */}
+                  <div
+                    className={`mb-3 flex flex-wrap items-center gap-3 text-base text-white/90 transition-all delay-150 duration-500 ease-out ${
+                      isActive
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-4 opacity-0'
+                    }`}
+                  >
+                    {item.vote_average > 0 && (
+                      <span className='px-2 py-1 bg-yellow-500 text-black font-semibold rounded'>
+                        {item.vote_average.toFixed(1)}
+                      </span>
+                    )}
+                    {item.tags && item.tags.length > 0
+                      ? item.tags.slice(0, 3).map((tag, tagIndex) => (
+                          <span
+                            key={tagIndex}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
+                          >
+                            {tag}
+                          </span>
+                        ))
+                      : item.genres &&
+                        Array.isArray(item.genres) &&
+                        item.genres.length > 0
+                      ? item.genres.slice(0, 3).map((genre, genreIndex) => (
+                          <span
+                            key={genreIndex}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
+                          >
+                            {genre}
+                          </span>
+                        ))
+                      : getGenreNames(item.genre_ids, 3).map((genre) => (
+                          <span
+                            key={genre}
+                            className='px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-sm'
+                          >
+                            {genre}
+                          </span>
+                        ))}
+                    {item.release_date && <span>{item.release_date}</span>}
+                  </div>
+
+                  {/* PC端播放按钮（原有按钮，保持不变） */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePlay(item.title);
+                    }}
+                    className='hidden lg:flex w-fit items-center gap-2 px-6 py-3 bg-gray-500/30 hover:bg-gray-500/50 backdrop-blur-sm text-white font-semibold rounded-lg transition-all pointer-events-auto mb-5'
+                  >
+                    <Play className='w-5 h-5 fill-white' />
+                    立即播放
+                  </button>
+
+                  {/* 介绍 */}
+                  {item.overview && (
+                    <p
+                      className={`line-clamp-3 max-w-xl text-[0.7rem] text-white/80 transition-all delay-150 duration-500 ease-out md:max-w-2xl md:text-base ${
+                        isActive
+                          ? 'translate-y-0 opacity-100'
+                          : 'translate-y-4 opacity-0'
+                      }`}
+                    >
+                      {item.overview}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </SwiperSlide>
+          );
+        })}
+      </Swiper>
 
       {/* 音量控制按钮 - 只在有豆瓣预告片时显示 */}
-      {currentItem.trailer_url && enableTrailers && (
+      {currentItem?.trailer_url && enableTrailers && (
         <button
           onClick={toggleMute}
           className='absolute top-2 right-2 md:top-4 md:right-4 w-8 h-8 md:w-10 md:h-10 bg-black/30 hover:bg-black/60 text-white rounded-full flex items-center justify-center transition-all duration-300 z-10'
@@ -687,22 +620,6 @@ export default function BannerCarousel({
           )}
         </button>
       )}
-
-      {/* 指示器 */}
-      <div className='absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2'>
-        {items.map((_, index) => (
-          <button
-            key={index}
-            onClick={() => goToSlide(index)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              index === currentIndex
-                ? 'w-8 bg-white'
-                : 'w-1.5 bg-white/50 hover:bg-white/80'
-            }`}
-            aria-label={`跳转到第 ${index + 1} 张`}
-          />
-        ))}
-      </div>
     </div>
   );
 }
