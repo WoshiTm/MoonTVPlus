@@ -2,7 +2,7 @@
 'use client';
 
 import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { PlayRecord } from '@/lib/db.client';
@@ -12,6 +12,8 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+
+import { processImageUrl } from '@/lib/utils';
 
 import PlayRecordsPanel from '@/components/PlayRecordsPanel';
 import VideoCard from '@/components/VideoCard';
@@ -23,6 +25,9 @@ interface ContinueWatchingProps {
 
 type PlayRecordItem = PlayRecord & { key: string };
 
+// TMDB 背景图查询缓存（标题 → 背景图 URL 或 null），避免重复请求
+const backdropCache = new Map<string, string | null>();
+
 export default function ContinueWatching({ className }: ContinueWatchingProps) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
   const cachedDisplayLimit = storageType !== 'localstorage' ? 10 : undefined;
@@ -30,6 +35,10 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   const [loading, setLoading] = useState(true);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showPlayRecordsPanel, setShowPlayRecordsPanel] = useState(false);
+  const [backdropByKey, setBackdropByKey] = useState<Record<string, string>>(
+    {}
+  );
+  const backdropTriedRef = useRef<Set<string>>(new Set());
 
   const updatePlayRecords = (
     allRecords: Record<string, PlayRecord>,
@@ -85,6 +94,51 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     return unsubscribe;
   }, [cachedDisplayLimit]);
 
+  // 老记录没有存背景图时，按片名向 TMDB 查一次补上（新记录保存时已带背景图，不查）
+  useEffect(() => {
+    const pending = playRecords.filter(
+      (record) => !record.backdrop && !backdropTriedRef.current.has(record.key)
+    );
+    if (pending.length === 0) return;
+    pending.forEach((record) => backdropTriedRef.current.add(record.key));
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        pending.map(async (record) => {
+          const title = record.search_title || record.title;
+          if (backdropCache.has(title)) {
+            return { key: record.key, backdrop: backdropCache.get(title) ?? null };
+          }
+          try {
+            const response = await fetch(
+              `/api/tmdb-details?title=${encodeURIComponent(title)}`
+            );
+            if (!response.ok) return { key: record.key, backdrop: null };
+            const result = await response.json();
+            const backdrop = result.backdrop
+              ? processImageUrl(result.backdrop)
+              : null;
+            backdropCache.set(title, backdrop);
+            return { key: record.key, backdrop };
+          } catch {
+            return { key: record.key, backdrop: null };
+          }
+        })
+      );
+      if (cancelled) return;
+      const patch: Record<string, string> = {};
+      results.forEach(({ key, backdrop }) => {
+        if (backdrop) patch[key] = backdrop;
+      });
+      if (Object.keys(patch).length > 0) {
+        setBackdropByKey((prev) => ({ ...prev, ...patch }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [playRecords]);
+
   if (!loading && playRecords.length === 0) {
     return null;
   }
@@ -107,7 +161,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
 
   return (
     <>
-      <section className={`mb-8 ${className || ''}`}>
+      <section className={`mb-5 ${className || ''}`}>
         <div className='mb-4 flex items-center justify-between'>
           <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
             继续观看
@@ -159,7 +213,11 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     <VideoCard
                       id={id}
                       title={record.title}
-                      poster={record.cover}
+                      poster={
+                        record.backdrop ||
+                        backdropByKey[record.key] ||
+                        record.cover
+                      }
                       year={record.year}
                       source={source}
                       source_name={record.source_name}

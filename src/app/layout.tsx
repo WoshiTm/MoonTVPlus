@@ -44,7 +44,7 @@ export async function generateMetadata(): Promise<Metadata> {
     other: {
       'moontvplus-site': '1',
     },
-    // iOS 添加到主屏幕：沉浸式状态栏（需配合 viewport-fit=cover + 顶部 safe-area）
+    // iOS 添加到主屏幕：黑透状态栏（内容贴边；自绘全屏不转屏、画面居中碰不到顶部玻璃区，横屏无此效果）
     appleWebApp: {
       capable: true,
       statusBarStyle: 'black-translucent',

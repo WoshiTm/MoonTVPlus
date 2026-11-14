@@ -308,8 +308,6 @@ export const UserMenu: React.FC = () => {
     order: number;
   }
 
-  type HomeBannerHeightScale = '1' | '1.5' | '2';
-
   const defaultHomeModules: HomeModule[] = [
     { id: 'hotMovies', name: '热门电影', enabled: true, order: 0 },
     { id: 'hotDuanju', name: '热播短剧', enabled: true, order: 1 },
@@ -322,20 +320,8 @@ export const UserMenu: React.FC = () => {
   const [homeModules, setHomeModules] =
     useState<HomeModule[]>(defaultHomeModules);
   const [homeBannerEnabled, setHomeBannerEnabled] = useState(true);
-  const [homeBannerHeightScale, setHomeBannerHeightScale] =
-    useState<HomeBannerHeightScale>('1');
   const [homeContinueWatchingEnabled, setHomeContinueWatchingEnabled] =
     useState(true);
-
-  const homeBannerHeightOptions: {
-    value: HomeBannerHeightScale;
-    label: string;
-    description: string;
-  }[] = [
-    { value: '1', label: '标准', description: '1x' },
-    { value: '1.5', label: '增高', description: '1.5x' },
-    { value: '2', label: '特高', description: '2x' },
-  ];
 
   // 豆瓣数据源选项
   const doubanDataSourceOptions = [
@@ -853,17 +839,6 @@ export const UserMenu: React.FC = () => {
       const savedHomeBannerEnabled = localStorage.getItem('homeBannerEnabled');
       if (savedHomeBannerEnabled !== null) {
         setHomeBannerEnabled(savedHomeBannerEnabled === 'true');
-      }
-
-      const savedHomeBannerHeightScale = localStorage.getItem(
-        'homeBannerHeightScale'
-      );
-      if (
-        savedHomeBannerHeightScale === '1' ||
-        savedHomeBannerHeightScale === '1.5' ||
-        savedHomeBannerHeightScale === '2'
-      ) {
-        setHomeBannerHeightScale(savedHomeBannerHeightScale);
       }
 
       const savedHomeContinueWatchingEnabled = localStorage.getItem(
@@ -2137,14 +2112,6 @@ export const UserMenu: React.FC = () => {
     }
   };
 
-  const handleHomeBannerHeightScaleChange = (value: HomeBannerHeightScale) => {
-    setHomeBannerHeightScale(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('homeBannerHeightScale', value);
-      window.dispatchEvent(new CustomEvent('homeModulesUpdated'));
-    }
-  };
-
   const handleHomeContinueWatchingToggle = (value: boolean) => {
     setHomeContinueWatchingEnabled(value);
     if (typeof window !== 'undefined') {
@@ -2270,7 +2237,6 @@ export const UserMenu: React.FC = () => {
       false;
     setDisableAutoLoadDanmaku(!defaultDanmakuAutoLoad);
     setHomeBannerEnabled(true);
-    setHomeBannerHeightScale('1');
     setHomeContinueWatchingEnabled(true);
     setHomeModules(defaultHomeModules);
     setDanmakuTraditionalToSimplified(false);
@@ -2313,7 +2279,6 @@ export const UserMenu: React.FC = () => {
       localStorage.setItem('danmakuMaxCount', '5000');
       localStorage.setItem('danmaku_heatmap_disabled', 'false');
       localStorage.setItem('homeBannerEnabled', 'true');
-      localStorage.setItem('homeBannerHeightScale', '1');
       localStorage.setItem('homeContinueWatchingEnabled', 'true');
       localStorage.setItem('homeModules', JSON.stringify(defaultHomeModules));
       localStorage.setItem('danmakuTraditionalToSimplified', 'false');
@@ -2517,9 +2482,6 @@ export const UserMenu: React.FC = () => {
       case 'homeBannerEnabled':
         setHomeBannerEnabled(true);
         break;
-      case 'homeBannerHeightScale':
-        setHomeBannerHeightScale('1');
-        break;
       case 'homeContinueWatchingEnabled':
         setHomeContinueWatchingEnabled(true);
         break;
@@ -2668,9 +2630,6 @@ export const UserMenu: React.FC = () => {
           break;
         case 'homeBannerEnabled':
           setHomeBannerEnabled(value === 'true');
-          break;
-        case 'homeBannerHeightScale':
-          setHomeBannerHeightScale(value as HomeBannerHeightScale);
           break;
         case 'homeContinueWatchingEnabled':
           setHomeContinueWatchingEnabled(value === 'true');
@@ -5215,52 +5174,6 @@ export const UserMenu: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* 轮播图配置 */}
-                  <div className='space-y-2'>
-                    <div>
-                      <h4 className='text-sm font-semibold text-gray-800 dark:text-gray-200'>
-                        轮播图配置
-                      </h4>
-                    </div>
-                    <div className='p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-3'>
-                      <div>
-                        <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
-                          轮播图高度
-                        </div>
-                        <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                          调整首页轮播图显示高度
-                        </p>
-                      </div>
-                      <div className='grid grid-cols-3 gap-2'>
-                        {homeBannerHeightOptions.map((option) => (
-                          <button
-                            key={option.value}
-                            onClick={() =>
-                              handleHomeBannerHeightScaleChange(option.value)
-                            }
-                            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                              homeBannerHeightScale === option.value
-                                ? 'bg-blue-500 border-blue-500 text-white shadow-sm'
-                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                            }`}
-                            title={`${option.label}（${option.description}）`}
-                          >
-                            <span>{option.label}</span>
-                            <span
-                              className={`ml-1 text-xs ${
-                                homeBannerHeightScale === option.value
-                                  ? 'text-blue-100'
-                                  : 'text-gray-500 dark:text-gray-400'
-                              }`}
-                            >
-                              {option.description}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* 模块显示与排序 */}
                   <div className='space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3'>
                     <div>
@@ -5393,7 +5306,6 @@ export const UserMenu: React.FC = () => {
                     onClick={() => {
                       setHomeModules(defaultHomeModules);
                       setHomeBannerEnabled(true);
-                      setHomeBannerHeightScale('1');
                       setHomeContinueWatchingEnabled(true);
                       if (typeof window !== 'undefined') {
                         localStorage.setItem(
@@ -5401,7 +5313,6 @@ export const UserMenu: React.FC = () => {
                           JSON.stringify(defaultHomeModules)
                         );
                         localStorage.setItem('homeBannerEnabled', 'true');
-                        localStorage.setItem('homeBannerHeightScale', '1');
                         localStorage.setItem(
                           'homeContinueWatchingEnabled',
                           'true'

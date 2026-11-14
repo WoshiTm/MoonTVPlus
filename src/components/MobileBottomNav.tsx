@@ -163,41 +163,28 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   return (
     <nav
-      className='md:hidden fixed left-0 right-0 z-[600] bg-white/90 backdrop-blur-xl border-t border-gray-200/50 overflow-hidden dark:bg-gray-900/80 dark:border-gray-700/50'
+      className='md:hidden fixed left-1/2 -translate-x-1/2 z-[600] w-[calc(100vw-2rem)] max-w-md rounded-full bg-white/70 backdrop-blur-xl border border-black/5 shadow-lg shadow-black/10 overflow-hidden dark:bg-gray-900/70 dark:border-white/10'
       style={{
-        /* 紧贴视口底部，同时在内部留出安全区高度 */
-        bottom: 0,
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        minHeight: 'calc(3.5rem + env(safe-area-inset-bottom))',
+        /* 悬浮于视口底部上方，留出安全区高度 */
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
       }}
     >
-      <ul className='flex items-center overflow-x-auto scrollbar-hide'>
+      <ul className='flex items-center'>
         {navItems.map((item) => {
           const active = isActive(item.href);
           return (
-            <li
-              key={item.href}
-              className='flex-shrink-0'
-              style={{ width: '20vw', minWidth: '20vw' }}
-            >
+            <li key={item.href} className='flex-1 min-w-0'>
               <Link
                 href={item.href}
                 prefetch={false}
-                className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
-              >
-                <item.icon
-                  className={`h-6 w-6 ${active
-                    ? 'text-green-600 dark:text-green-400'
+                className={`flex flex-col items-center justify-center w-full h-12 gap-0.5 text-[11px] rounded-full transition-colors ${
+                  active
+                    ? 'text-green-600 dark:text-green-400 bg-green-500/10'
                     : 'text-gray-500 dark:text-gray-400'
-                    }`}
-                />
-                <span
-                  className={
-                    active
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-gray-600 dark:text-gray-300'
-                  }
-                >
+                }`}
+              >
+                <item.icon className='h-5 w-5' />
+                <span className='truncate max-w-full px-0.5'>
                   {item.label}
                 </span>
               </Link>

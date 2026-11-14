@@ -1795,7 +1795,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               <>
                 {/* 顶部渐变遮罩 - 用于标题背景 */}
                 <div
-                  className='absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent pt-2 pb-8 px-2'
+                  className='absolute top-0 left-0 right-0 rounded-lg bg-gradient-to-b from-black/80 via-black/40 to-transparent pt-2 pb-8 px-2'
                   style={
                     {
                       WebkitUserSelect: 'none',
@@ -1882,7 +1882,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
                 {/* 底部渐变遮罩 - 用于进度条背景 */}
                 <div
-                  className='absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-8 pb-2 px-2'
+                  className='absolute bottom-0 left-0 right-0 rounded-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-8 pb-2 px-2'
                   style={
                     {
                       WebkitUserSelect: 'none',

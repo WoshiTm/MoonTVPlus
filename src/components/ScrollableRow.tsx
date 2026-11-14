@@ -5,12 +5,18 @@ interface ScrollableRowProps {
   children: React.ReactNode;
   scrollDistance?: number;
   bottomPadding?: string;
+  // 齐边：卡片左缘与板块标题左缘对齐；行内另留 8px 滚动留白，供卡片放大时不裁圆角
+  flush?: boolean;
+  // 滚动结束时贴齐到卡片起点
+  snap?: boolean;
 }
 
 export default function ScrollableRow({
   children,
   scrollDistance = 1000,
   bottomPadding = 'pb-12 sm:pb-14',
+  flush = false,
+  snap = false,
 }: ScrollableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showLeftScroll, setShowLeftScroll] = useState(false);
@@ -104,7 +110,7 @@ export default function ScrollableRow({
     >
       <div
         ref={containerRef}
-        className={`flex space-x-2 sm:space-x-4 overflow-x-auto scrollbar-hide py-1 sm:py-2 ${bottomPadding} px-4 sm:px-6`}
+        className={`flex space-x-4 overflow-x-auto scrollbar-hide py-1 sm:py-2 ${bottomPadding} ${flush ? '-mx-2 px-2 scroll-px-2' : 'px-4 sm:px-6'} ${snap ? 'snap-x snap-mandatory' : ''}`}
         onScroll={checkScroll}
       >
         {children}
