@@ -4,7 +4,12 @@ import { NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
 import { fetchDoubanData } from '@/lib/douban';
-import { getTMDBTrendingContent, getTMDBVideos } from '@/lib/tmdb.client';
+import {
+  getTMDBImages,
+  getTMDBTrendingContent,
+  getTMDBVideos,
+  searchTMDBMulti,
+} from '@/lib/tmdb.client';
 
 // 缓存配置 - 服务器内存缓存3小时
 const CACHE_DURATION = 3 * 60 * 60 * 1000; // 3小时
@@ -13,6 +18,150 @@ const CACHE_DURATION = 3 * 60 * 60 * 1000; // 3小时
 let tmdbCache: { data: any; timestamp: number } | null = null;
 let txCache: { data: any; timestamp: number } | null = null;
 let doubanCache: { data: any; timestamp: number } | null = null;
+
+
+// 移除标题中的季度信息（与 tmdb-details 路由一致）
+function removeSeasonInfo(title: string): string {
+  return title
+    .replace(/第[一二三四五六七八九十\d]+[（(]\d+[）)][季部]/g, '')
+    .replace(/第[一二三四五六七八九十\d]+[季部]/g, '')
+    .replace(/[（(]\d+[）)]/g, '')
+    .replace(/\s+season\s+\d+/gi, '')
+    .replace(/\s+S\d+/gi, '')
+    .trim();
+}
+
+// 精确匹配标题（与 tmdb-details 路由一致）
+function findExactMatch(results: any[], originalTitle: string): any | null {
+  if (!results || results.length === 0) return null;
+  if (results.length === 1) return results[0];
+
+  const cleanTitle = originalTitle.toLowerCase().trim();
+
+  // 尝试精确匹配
+  for (const result of results) {
+    const resultTitle = (result.title || result.name || '').toLowerCase().trim();
+    if (resultTitle === cleanTitle) {
+      return result;
+    }
+  }
+
+  // 如果没有精确匹配，返回第一个
+  return results[0];
+}
+
+// 从 TMDB 图片列表中挑一张最合适的 logo
+function pickLogoPath(logos: any[]): string | null {
+  if (!Array.isArray(logos) || logos.length === 0) return null;
+
+  const langPriority = (iso: string | null | undefined) => {
+    if (iso === 'zh') return 0;
+    if (iso === 'en') return 1;
+    if (!iso) return 2;
+    return 3;
+  };
+
+  const sorted = logos
+    .filter((logo) => logo && logo.file_path)
+    .sort((a, b) => {
+      const langDiff = langPriority(a.iso_639_1) - langPriority(b.iso_639_1);
+      if (langDiff !== 0) return langDiff;
+      const voteDiff = (b.vote_average || 0) - (a.vote_average || 0);
+      if (voteDiff !== 0) return voteDiff;
+      return (b.vote_count || 0) - (a.vote_count || 0);
+    });
+
+  return sorted.length > 0 ? sorted[0].file_path : null;
+}
+
+// 从 TMDB 图片列表中挑一张无字背景图（无语言标记，按评分排序）
+function pickTextlessBackdropPath(backdrops: any[]): string | null {
+  if (!Array.isArray(backdrops) || backdrops.length === 0) return null;
+
+  const sorted = backdrops
+    .filter(
+      (backdrop) =>
+        backdrop && backdrop.file_path && !backdrop.iso_639_1
+    )
+    .sort((a, b) => {
+      const voteDiff = (b.vote_average || 0) - (a.vote_average || 0);
+      if (voteDiff !== 0) return voteDiff;
+      return (b.vote_count || 0) - (a.vote_count || 0);
+    });
+
+  return sorted.length > 0 ? sorted[0].file_path : null;
+}
+
+// 为单个轮播项匹配 TMDB 并取 logo 与无字背景图；失败返回 null（调用方保留原图与文字标题）
+async function fetchArtwork(
+  apiKey: string,
+  item: any,
+  bannerDataSource: string,
+  proxy?: string,
+  reverseProxy?: string
+): Promise<{
+  logoPath: string | null;
+  textlessBackdropPath: string | null;
+  matchedBackdropPath: string | null;
+} | null> {
+  try {
+    let tmdbId: number | null = null;
+    let mediaType: 'movie' | 'tv' | null = null;
+    let matchedBackdropPath: string | null = null;
+
+    if (bannerDataSource === 'TMDB' && item.id && item.media_type) {
+      tmdbId = item.id;
+      mediaType = item.media_type;
+      matchedBackdropPath = item.backdrop_path || null;
+    } else {
+      const cleanedTitle = removeSeasonInfo(item.title || '');
+      if (!cleanedTitle) return null;
+      const searchResult = await searchTMDBMulti(
+        apiKey,
+        cleanedTitle,
+        proxy,
+        reverseProxy
+      );
+      if (searchResult.code !== 200 || !searchResult.results.length) {
+        return null;
+      }
+      const match = findExactMatch(searchResult.results, cleanedTitle);
+      if (!match) return null;
+      tmdbId = match.id;
+      mediaType = match.media_type;
+      matchedBackdropPath = match.backdrop_path || null;
+    }
+
+    if (!tmdbId || (mediaType !== 'movie' && mediaType !== 'tv')) {
+      return null;
+    }
+
+    const imagesResult = await getTMDBImages(
+      apiKey,
+      tmdbId,
+      mediaType,
+      proxy,
+      reverseProxy
+    );
+    if (imagesResult.code !== 200 || !imagesResult.images) {
+      return {
+        logoPath: null,
+        textlessBackdropPath: null,
+        matchedBackdropPath,
+      };
+    }
+    return {
+      logoPath: pickLogoPath(imagesResult.images.logos || []),
+      textlessBackdropPath: pickTextlessBackdropPath(
+        imagesResult.images.backdrops || []
+      ),
+      matchedBackdropPath,
+    };
+  } catch (error) {
+    console.error('获取 TMDB 轮播图素材失败:', error);
+    return null;
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -87,6 +236,36 @@ export async function GET() {
         data: result,
         timestamp: Date.now(),
       };
+    }
+
+    // 为轮播图附加 TMDB logo 与无字背景图（无 Key 或匹配失败时静默跳过，标题仍显示文字、背景图保留原图）
+    const tmdbApiKey = config.SiteConfig?.TMDBApiKey;
+    if (
+      tmdbApiKey &&
+      result &&
+      Array.isArray(result.list) &&
+      result.list.length > 0
+    ) {
+      const tmdbProxy = config.SiteConfig?.TMDBProxy;
+      const tmdbReverseProxy = config.SiteConfig?.TMDBReverseProxy;
+      await Promise.all(
+        result.list.map(async (item: any) => {
+          const artwork = await fetchArtwork(
+            tmdbApiKey,
+            item,
+            bannerDataSource,
+            tmdbProxy,
+            tmdbReverseProxy
+          );
+          if (artwork) {
+            item.logo_path = artwork.logoPath;
+            item.backdrop_path =
+              artwork.textlessBackdropPath ||
+              artwork.matchedBackdropPath ||
+              item.backdrop_path;
+          }
+        })
+      );
     }
 
     return NextResponse.json(result);

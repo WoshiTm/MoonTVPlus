@@ -52,6 +52,10 @@ function HomeClient() {
   const [bangumiCalendarData, setBangumiCalendarData] = useState<
     BangumiCalendarData[]
   >([]);
+  // 首页新番放送行：横图且无竖版可补的条目予以排除（仅首页，点进列表仍显示）
+  const [hiddenBangumiIds, setHiddenBangumiIds] = useState<Set<number>>(
+    new Set()
+  );
   const [loading, setLoading] = useState(true);
   const { announcement, announcementDisplayMode } = useSite();
   // 首页模块配置状态
@@ -569,9 +573,9 @@ function HomeClient() {
     switch (moduleId) {
       case 'hotMovies':
         return (
-          <section key='hotMovies' className='mb-8'>
+          <section key='hotMovies' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 热门电影
               </h2>
               <Link
@@ -582,12 +586,12 @@ function HomeClient() {
                 <ChevronRight className='w-4 h-4 ml-1' />
               </Link>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {loading
                 ? Array.from({ length: 8 }).map((_, index) => (
                     <div
                       key={index}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <div className='aspect-[2/3] bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2' />
                       <div className='h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-3/4' />
@@ -596,7 +600,7 @@ function HomeClient() {
                 : hotMovies.map((movie) => (
                     <div
                       key={movie.id}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <VideoCard
                         id={movie.id}
@@ -617,9 +621,9 @@ function HomeClient() {
       case 'hotDuanju':
         if (hotDuanju.length === 0) return null;
         return (
-          <section key='hotDuanju' className='mb-8'>
+          <section key='hotDuanju' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 热播短剧
               </h2>
               <Link
@@ -630,12 +634,12 @@ function HomeClient() {
                 <ChevronRight className='w-4 h-4 ml-1' />
               </Link>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {loading
                 ? Array.from({ length: 8 }).map((_, index) => (
                     <div
                       key={index}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <div className='aspect-[2/3] bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2' />
                       <div className='h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-3/4' />
@@ -644,7 +648,7 @@ function HomeClient() {
                 : hotDuanju.map((duanju) => (
                     <div
                       key={duanju.id + duanju.source}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <VideoCard
                         id={duanju.id}
@@ -672,9 +676,9 @@ function HomeClient() {
 
       case 'bangumiCalendar':
         return (
-          <section key='bangumiCalendar' className='mb-8'>
+          <section key='bangumiCalendar' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 新番放送
               </h2>
               <Link
@@ -685,12 +689,12 @@ function HomeClient() {
                 <ChevronRight className='w-4 h-4 ml-1' />
               </Link>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {loading
                 ? Array.from({ length: 8 }).map((_, index) => (
                     <div
                       key={index}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                         <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -713,16 +717,28 @@ function HomeClient() {
                     const todayAnimes =
                       bangumiCalendarData
                         .find((item) => item.weekday.en === currentWeekday)
-                        ?.items.filter((anime) => anime.images) || [];
+                        ?.items.filter(
+                          (anime) =>
+                            anime.images && !hiddenBangumiIds.has(anime.id)
+                        ) || [];
 
                     return todayAnimes.map((anime, index) => (
                       <div
                         key={`${anime.id}-${index}`}
-                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                        className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                       >
                         <VideoCard
                           from='douban'
                           title={anime.name_cn || anime.name}
+                          originalTitle={anime.name}
+                          onPortraitUnresolvable={() =>
+                            setHiddenBangumiIds((prev) => {
+                              if (prev.has(anime.id)) return prev;
+                              const next = new Set(prev);
+                              next.add(anime.id);
+                              return next;
+                            })
+                          }
                           poster={
                             anime.images?.large ||
                             anime.images?.common ||
@@ -745,9 +761,9 @@ function HomeClient() {
 
       case 'hotTvShows':
         return (
-          <section key='hotTvShows' className='mb-8'>
+          <section key='hotTvShows' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 热门剧集
               </h2>
               <Link
@@ -758,12 +774,12 @@ function HomeClient() {
                 <ChevronRight className='w-4 h-4 ml-1' />
               </Link>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {loading
                 ? Array.from({ length: 8 }).map((_, index) => (
                     <div
                       key={index}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <div className='aspect-[2/3] bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2' />
                       <div className='h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-3/4' />
@@ -772,7 +788,7 @@ function HomeClient() {
                 : hotTvShows.map((tvShow) => (
                     <div
                       key={tvShow.id}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <VideoCard
                         id={tvShow.id}
@@ -792,9 +808,9 @@ function HomeClient() {
 
       case 'hotVarietyShows':
         return (
-          <section key='hotVarietyShows' className='mb-8'>
+          <section key='hotVarietyShows' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 热门综艺
               </h2>
               <Link
@@ -805,12 +821,12 @@ function HomeClient() {
                 <ChevronRight className='w-4 h-4 ml-1' />
               </Link>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {loading
                 ? Array.from({ length: 8 }).map((_, index) => (
                     <div
                       key={index}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <div className='aspect-[2/3] bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse mb-2' />
                       <div className='h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-3/4' />
@@ -819,7 +835,7 @@ function HomeClient() {
                 : hotVarietyShows.map((varietyShow) => (
                     <div
                       key={varietyShow.id}
-                      className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                     >
                       <VideoCard
                         id={varietyShow.id}
@@ -842,17 +858,17 @@ function HomeClient() {
       case 'upcomingContent':
         if (upcomingContent.length === 0) return null;
         return (
-          <section key='upcomingContent' className='mb-8'>
+          <section key='upcomingContent' className='mb-5'>
             <div className='mb-4 flex items-center justify-between'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+              <h2 className='text-xl font-semibold text-gray-800 dark:text-gray-200'>
                 即将上映
               </h2>
             </div>
-            <ScrollableRow>
+            <ScrollableRow flush snap bottomPadding='pb-4'>
               {upcomingContent.map((item) => (
                 <div
                   key={`${item.media_type}-${item.id}`}
-                  className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                  className='snap-start shrink-0 min-w-0 basis-[calc(100%/3-2rem/3)] md:basis-[calc(100%/4-3rem/4)] lg:basis-[calc(100%/6-5rem/6)]'
                 >
                   <VideoCard
                     title={item.title}
@@ -885,8 +901,10 @@ function HomeClient() {
       <FireworksCanvas />
       {/* TMDB 热门轮播图 */}
       {homeBannerEnabled && (
-        <div className='w-full mb-4'>
-          <BannerCarousel delayLoad={true} />
+        <div className='px-2 sm:px-10 pt-5 mb-2'>
+          <div className='max-w-[95%] mx-auto'>
+            <BannerCarousel delayLoad={true} />
+          </div>
         </div>
       )}
 
@@ -896,7 +914,7 @@ function HomeClient() {
           <>
             {/* 源站寻片和AI问片入口 */}
             <div
-              className={`flex items-center justify-end gap-2 mb-4 ${
+              className={`flex items-center justify-end gap-2 mb-2 ${
                 homeBannerEnabled ? '' : 'mt-[30px]'
               }`}
             >

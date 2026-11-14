@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
 import {
+  getTMDBImages,
   getTMDBImageUrl,
   getTMDBMovieDetails,
   getTMDBTVDetails,
@@ -43,6 +44,30 @@ function findExactMatch(results: any[], originalTitle: string): any | null {
 
   // 如果没有精确匹配，返回第一个
   return results[0];
+}
+
+// 从 TMDB 图片列表中挑一张最合适的 logo（与 trending 路由一致）
+function pickLogoPath(logos: any[]): string | null {
+  if (!Array.isArray(logos) || logos.length === 0) return null;
+
+  const langPriority = (iso: string | null | undefined) => {
+    if (iso === 'zh') return 0;
+    if (iso === 'en') return 1;
+    if (!iso) return 2;
+    return 3;
+  };
+
+  const sorted = logos
+    .filter((logo) => logo && logo.file_path)
+    .sort((a, b) => {
+      const langDiff = langPriority(a.iso_639_1) - langPriority(b.iso_639_1);
+      if (langDiff !== 0) return langDiff;
+      const voteDiff = (b.vote_average || 0) - (a.vote_average || 0);
+      if (voteDiff !== 0) return voteDiff;
+      return (b.vote_count || 0) - (a.vote_count || 0);
+    });
+
+  return sorted.length > 0 ? sorted[0].file_path : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -151,6 +176,23 @@ export async function GET(request: NextRequest) {
 
     const details = detailsResult.details;
 
+    // 附加片名 logo（失败时静默降级为 null，不影响详情返回）
+    let logoPath: string | null = null;
+    try {
+      const imagesResult = await getTMDBImages(
+        tmdbApiKey,
+        tmdbId,
+        mediaType,
+        tmdbProxy,
+        tmdbReverseProxy
+      );
+      if (imagesResult.code === 200 && imagesResult.images) {
+        logoPath = pickLogoPath(imagesResult.images.logos || []);
+      }
+    } catch (error) {
+      console.error('获取 TMDB logo 失败:', error);
+    }
+
     // 构建返回数据
     const responseData = {
       tmdbId: `${mediaType}:${tmdbId}`, // 用于缓存
@@ -162,6 +204,7 @@ export async function GET(request: NextRequest) {
       poster: details.poster_path
         ? getTMDBImageUrl(details.poster_path, 'w500')
         : null,
+      logo: logoPath ? getTMDBImageUrl(logoPath, 'w500') : null,
       overview: details.overview || '',
       rating: details.vote_average ? details.vote_average.toFixed(1) : '',
       releaseDate: details.release_date || details.first_air_date || '',

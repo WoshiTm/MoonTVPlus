@@ -201,7 +201,7 @@ div[data-media-provider] video {
 }
 
 .art-poster {
-  background-size: contain !important; /* 使图片完整展示 */
+  background-size: cover !important; /* 铺满窗口 */
   background-position: center center !important; /* 居中显示 */
   background-repeat: no-repeat !important; /* 防止重复 */
   background-color: #000 !important; /* 其余区域填充为黑色 */
@@ -209,9 +209,8 @@ div[data-media-provider] video {
 
 /* iOS PWA 自绘全屏：把这套类加到播放器容器上，直接钉满视口、铺黑底。
    iPhone 上普通元素用不了 Fullscreen API（只有 <video> 能原生全屏），
-   ArtPlayer 的 fullscreenWeb 又不会转屏、画面还缩在中间，所以这里不借浏览器全屏，
-   只把容器撑满，画面本身交给 object-fit: contain 居中。
-   代价：竖屏放横片就是"整宽一条 + 上下黑边"——这是几何，不会转屏。 */
+   ArtPlayer 的 fullscreenWeb 又按安全区缩进、主屏幕下会露页面，
+   所以这里不借浏览器全屏，只把容器撑满，画面本身交给 object-fit: contain 居中。 */
 .ios-pwa-immersive {
   position: fixed !important;
   inset: 0 !important;
@@ -227,6 +226,14 @@ div[data-media-provider] video {
   border-radius: 0 !important;
 }
 
+/* 全屏时 html 挂黑底，把 iOS 26 玻璃染暗，固定成深色效果（不随日夜切换）。
+   实测 2026-11-13 截图：黑底把黑透下的玻璃染成暗灰。进出全屏时由 JS 挂/摘。 */
+html.ios-immersive-tint {
+  background-color: #000 !important;
+}
+
+
+
 /* 隐藏移动端竖屏时的 pip 按钮 */
 @media (max-width: 768px) {
   .art-control-pip {
@@ -240,6 +247,41 @@ div[data-media-provider] video {
   .art-control-volume {
     display: none !important;
   }
+}
+
+/* 手机全屏时控制条避开圆角与 Home 条：左右内缩、底部垫起。
+   只在全屏容器内生效（主屏幕沉浸式盒子 / 网页全屏），内嵌播放器不改；
+   竖屏取 16px 底线避开圆角弧线；横屏另有专条（见下）。 */
+@media (max-width: 768px) {
+  .ios-pwa-immersive .art-controls,
+  .art-fullscreen-web .art-controls {
+    padding-left: max(env(safe-area-inset-left), 16px);
+    padding-right: max(env(safe-area-inset-right), 16px);
+    padding-bottom: max(env(safe-area-inset-bottom), 6px);
+  }
+}
+
+/* 手机横屏全屏时控制条同样避开圆角与 Home 条：横屏宽度超 768px，上面那条
+   max-width 规则命中不了，须按方向 + 屏幕高度单独判断（手机横屏高度约 400px）。
+   两侧取安全区边距减 16px（约 31px），既避开 R 角又不至于推得太靠里。 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .ios-pwa-immersive .art-controls,
+  .art-fullscreen-web .art-controls {
+    padding-left: max(calc(env(safe-area-inset-left) - 16px), 16px);
+    padding-right: max(calc(env(safe-area-inset-right) - 16px), 16px);
+    padding-bottom: max(env(safe-area-inset-bottom), 6px);
+  }
+}
+
+/* 弹幕条与其它控制按钮同高同对齐：上面两条规则的 padding-bottom 会压矮
+   控制条内容区，其它按钮定高顶对齐、中心不受影响，弹幕条固定 32px 居中
+   却会被抬高半个 padding（全屏横屏约 10px、网页全屏竖屏约 17px）。
+   让弹幕条占满控制条高度并顶对齐，中心与其它图标一致；无 padding 的
+   界面中心位置不变。只作用于控制条内的弹幕条，窄屏时挪到播放器外的
+   那条（不在 .art-controls-center 内）不受影响。 */
+.art-video-player .art-controls-center .artplayer-plugin-danmuku {
+  height: var(--art-control-height);
+  align-self: flex-start;
 }
 
 /* 水波纹缩放动画 - 第一层 (快速扩散) */

@@ -62,12 +62,19 @@ import TrailerPickerDialog from '@/components/TrailerPickerDialog';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
 import type { TMDBVideoItem } from '@/lib/tmdb.client';
 
+// Bangumi 横图封面的竖版海报缓存（原名|显示名 → 海报 URL 或 null），避免重复请求
+const bangumiPortraitPosterCache = new Map<string, string | null>();
+// 封面加载失败时按片名取 TMDB 海报的缓存（片名 → 海报 URL 或 null），避免重复请求
+const tmdbErrorFallbackCache = new Map<string, string | null>();
+
 export interface VideoCardProps {
   id?: string;
   source?: string;
   title?: string;
   query?: string;
   poster?: string;
+  /** 片名 logo 图（仅继续观看横卡传入；有图显示图，无图显示文字标题） */
+  titleLogo?: string | null;
   episodes?: number;
   source_name?: string;
   source_names?: string[];
@@ -87,6 +94,10 @@ export interface VideoCardProps {
   rate?: string;
   type?: string;
   isBangumi?: boolean;
+  /** Bangumi 原名（用于竖版封面解析，显示名查不到时按原名查） */
+  originalTitle?: string;
+  /** 横图封面无竖版可补时回调（仅首页新番放送行传入，用于排除该条目） */
+  onPortraitUnresolvable?: () => void;
   /** 明确标记为动漫（豆瓣动漫页 / CMS 等） */
   isAnime?: boolean;
   /** CMS 分类名，用于启发式识别动漫 */
@@ -122,6 +133,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       title = '',
       query = '',
       poster = '',
+      titleLogo,
       episodes,
       source,
       source_name,
@@ -136,6 +148,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       rate,
       type = '',
       isBangumi = false,
+      originalTitle,
+      onPortraitUnresolvable,
       isAnime = false,
       typeName,
       isAggregate = false,
@@ -170,6 +184,16 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     );
     const actualTitle = title;
     const actualPoster = poster;
+    // 来源名显示去重（存量兜底）：脚本源老记录里已存的“懂片帝 / 懂片帝”在显示时折成一个
+    const displaySourceName = useMemo(() => {
+      if (!source_name) return source_name;
+      const parts = source_name.split(' / ');
+      if (parts.length === 2) {
+        const [a, b] = parts.map((part) => part.trim());
+        if (a !== '' && a === b) return a;
+      }
+      return source_name;
+    }, [source_name]);
     const netdiskPosterPlaceholder = useMemo(() => {
       return `data:image/svg+xml;utf8,${encodeURIComponent(`
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600">
@@ -211,6 +235,13 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const [trailerError, setTrailerError] = useState<string | null>(null);
     const [trailerVideos, setTrailerVideos] = useState<TMDBVideoItem[]>([]);
     const [displayPoster, setDisplayPoster] = useState(processedPoster);
+    const [logoFailed, setLogoFailed] = useState(false);
+    const [isLandscapePoster, setIsLandscapePoster] = useState(false);
+    // 海报加载失败时隐藏图层（只留灰色占位），避免破图标闪出来；兜底图加载成功后恢复
+    const [posterFailed, setPosterFailed] = useState(false);
+    const landscapePosterFixTriedRef = useRef('');
+    // 上一次报错的图地址：换图后报错要重置恢复链标记，否则新图直接沿用旧标记卡空白
+    const lastFailedPosterSrcRef = useRef('');
 
     // 检查AI功能是否启用
     useEffect(() => {
@@ -266,6 +297,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       setDisplayPoster(processedPoster);
     }, [processedPoster]);
 
+    useEffect(() => {
+      setLogoFailed(false);
+    }, [titleLogo]);
+
     // 主源图片域主页探测：失败写 sticky 后切备源海报（替代原 5s 强制降级）
     useEffect(() => {
       if (!actualPoster) return;
@@ -284,6 +319,60 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         cancelled = true;
       };
     }, [actualPoster]);
+
+    // 新番放送横图封面处理：仅竖卡 + Bangumi 卡片。横图先换竖版海报（AniList → TMDB），换不到则完整显示并回调。
+    const handlePosterLoaded = (result?: {
+      naturalWidth?: number;
+      naturalHeight?: number;
+    } | null) => {
+      setIsLoading(true);
+      setPosterFailed(false);
+      if (!isBangumi || orientation === 'horizontal' || !actualTitle) return;
+      const naturalWidth = result?.naturalWidth;
+      const naturalHeight = result?.naturalHeight;
+      if (!naturalWidth || !naturalHeight) return;
+      if (naturalWidth <= naturalHeight) {
+        setIsLandscapePoster(false);
+        return;
+      }
+      const fixKey = `${actualTitle}|${displayPoster}`;
+      if (landscapePosterFixTriedRef.current === fixKey) return;
+      landscapePosterFixTriedRef.current = fixKey;
+      const applyPortrait = (portrait: string | null) => {
+        if (portrait && portrait !== displayPoster) {
+          setDisplayPoster(portrait);
+        } else {
+          setIsLandscapePoster(true);
+          onPortraitUnresolvable?.();
+        }
+      };
+      const cacheKey = `${originalTitle || ''}|${actualTitle}`;
+      const cached = bangumiPortraitPosterCache.get(cacheKey);
+      if (cached !== undefined) {
+        applyPortrait(cached);
+        return;
+      }
+      void (async () => {
+        try {
+          const query = originalTitle
+            ? `?title=${encodeURIComponent(
+                actualTitle
+              )}&original=${encodeURIComponent(originalTitle)}`
+            : `?title=${encodeURIComponent(actualTitle)}`;
+          const response = await fetch(`/api/anime-cover${query}`);
+          if (!response.ok) throw new Error('anime-cover failed');
+          const data = await response.json();
+          const portrait = data?.portrait
+            ? processImageUrl(data.portrait)
+            : null;
+          bangumiPortraitPosterCache.set(cacheKey, portrait);
+          applyPortrait(portrait);
+        } catch {
+          // 请求失败不记负缓存、不回调：只横屏显示，不排除
+          setIsLandscapePoster(true);
+        }
+      })();
+    };
 
     useImperativeHandle(ref, () => ({
       setEpisodes: (eps?: number) => setDynamicEpisodes(eps),
@@ -1085,24 +1174,70 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                   <Cloud className='w-10 h-10 opacity-80' />
                 </div>
               ) : (
-                <Image
-                  src={displayPoster}
-                  alt={actualTitle}
-                  fill
-                  className={
-                    origin === 'live'
-                      ? 'object-contain'
-                      : orientation === 'horizontal'
-                      ? 'object-cover object-center'
-                      : 'object-cover'
-                  }
-                  referrerPolicy='no-referrer'
-                  loading='lazy'
-                  onLoadingComplete={() => {
-                    setIsLoading(true);
-                  }}
+                <>
+                  {/* 横图封面完整显示时的模糊填充层 */}
+                  {isLandscapePoster && displayPoster && (
+                    <img
+                      src={displayPoster}
+                      alt=''
+                      aria-hidden
+                      draggable={false}
+                      referrerPolicy='no-referrer'
+                      onError={(e) => {
+                        e.currentTarget.style.opacity = '0';
+                      }}
+                      onLoad={(e) => {
+                        e.currentTarget.style.opacity = '';
+                      }}
+                      className='absolute inset-0 h-full w-full scale-125 object-cover blur-lg brightness-75'
+                      style={
+                        {
+                          pointerEvents: 'none',
+                        } as React.CSSProperties
+                      }
+                    />
+                  )}
+                  <Image
+                    src={displayPoster}
+                    alt={actualTitle}
+                    fill
+                    className={`${
+                      origin === 'live'
+                        ? 'object-contain'
+                        : orientation === 'horizontal'
+                        ? 'object-cover object-center'
+                        : isLandscapePoster
+                        ? 'object-contain'
+                        : 'object-cover'
+                    }${posterFailed ? ' opacity-0' : ''}`}
+                    referrerPolicy='no-referrer'
+                    loading='lazy'
+                    onLoadingComplete={handlePosterLoaded}
                   onError={(e) => {
+                    setPosterFailed(true);
                     const img = e.currentTarget as HTMLImageElement;
+                    // 换了张图报错时重置恢复链：dataset 标记挂在元素上会跨海报残留
+                    const failedSrc = img.currentSrc || img.src;
+                    if (lastFailedPosterSrcRef.current !== failedSrc) {
+                      lastFailedPosterSrcRef.current = failedSrc;
+                      delete img.dataset.retried;
+                      delete img.dataset.tmdbFallbackTried;
+                    }
+                    // 恢复图加载成功时直接清隐藏标记：不能只靠 onLoadingComplete，
+                    // next/image 内部对同一 src 只回调一次，重复加载成功时不会再回调
+                    const armPosterVisibleOnLoad = () => {
+                      if (img.complete && img.naturalWidth > 0) {
+                        setPosterFailed(false);
+                        return;
+                      }
+                      img.addEventListener(
+                        'load',
+                        () => {
+                          if (img.naturalWidth > 0) setPosterFailed(false);
+                        },
+                        { once: true }
+                      );
+                    };
                     const doubanFallbackPoster =
                       getDoubanImageFallbackUrl(actualPoster);
                     if (
@@ -1110,6 +1245,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       tryApplyDoubanImageFallback(img, actualPoster)
                     ) {
                       setDisplayPoster(doubanFallbackPoster);
+                      armPosterVisibleOnLoad();
                       return;
                     }
 
@@ -1120,6 +1256,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       tryApplyBangumiImageFallback(img, actualPoster)
                     ) {
                       setDisplayPoster(bangumiFallbackPoster);
+                      armPosterVisibleOnLoad();
                       return;
                     }
 
@@ -1127,6 +1264,19 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       clearBangumiImageFallbackCacheIfFailed(img, actualPoster)
                     ) {
                       setDisplayPoster(processedPoster);
+                      armPosterVisibleOnLoad();
+                      return;
+                    }
+
+                    // 快速通道：该片名已有缓存的 TMDB 兜底图且当前不是它时，
+                    // 直接用缓存图（回滑时原图再次报错也能立刻自愈，不会卡空白）
+                    const cachedTmdbPoster = actualTitle
+                      ? tmdbErrorFallbackCache.get(actualTitle)
+                      : undefined;
+                    if (cachedTmdbPoster && cachedTmdbPoster !== displayPoster) {
+                      setDisplayPoster(cachedTmdbPoster);
+                      img.src = cachedTmdbPoster;
+                      armPosterVisibleOnLoad();
                       return;
                     }
 
@@ -1136,7 +1286,42 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       setTimeout(() => {
                         setDisplayPoster(processedPoster);
                         img.src = processedPoster;
+                        armPosterVisibleOnLoad();
                       }, 2000);
+                    } else if (
+                      !img.dataset.tmdbFallbackTried &&
+                      actualTitle
+                    ) {
+                      // 最后兜底：重试也失败时按片名取 TMDB 海报（所有卡片通用）
+                      img.dataset.tmdbFallbackTried = 'true';
+                      void (async () => {
+                        try {
+                          let tmdbPoster =
+                            tmdbErrorFallbackCache.get(actualTitle);
+                          if (tmdbPoster === undefined) {
+                            const response = await fetch(
+                              `/api/tmdb-details?title=${encodeURIComponent(actualTitle)}`
+                            );
+                            if (!response.ok)
+                              throw new Error('tmdb-details failed');
+                            const data = await response.json();
+                            tmdbPoster = data?.poster
+                              ? processImageUrl(data.poster)
+                              : null;
+                            tmdbErrorFallbackCache.set(
+                              actualTitle,
+                              tmdbPoster
+                            );
+                          }
+                          if (tmdbPoster && tmdbPoster !== displayPoster) {
+                            setDisplayPoster(tmdbPoster);
+                            img.src = tmdbPoster;
+                            armPosterVisibleOnLoad();
+                          }
+                        } catch {
+                          // 取不到就留空占位，不再重试
+                        }
+                      })();
                     }
                   }}
                   style={
@@ -1156,7 +1341,8 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                     e.preventDefault();
                     return false;
                   }}
-                />
+                  />
+                </>
               )}
 
               {/* 悬浮遮罩 */}
@@ -1554,7 +1740,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                         className='inline-block text-white/90 mr-0.5'
                       />
                     )}
-                    {source_name}
+                    {displaySourceName}
                   </span>
                 </div>
               )}
@@ -1795,7 +1981,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               <>
                 {/* 顶部渐变遮罩 - 用于标题背景 */}
                 <div
-                  className='absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent pt-2 pb-8 px-2'
+                  className='absolute top-0 left-0 right-0 rounded-lg bg-gradient-to-b from-black/80 via-black/40 to-transparent pt-2 pb-8 px-2'
                   style={
                     {
                       WebkitUserSelect: 'none',
@@ -1819,23 +2005,48 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                       } as React.CSSProperties
                     }
                   >
-                    <span
-                      className='block text-sm font-bold truncate text-white'
-                      style={
-                        {
-                          WebkitUserSelect: 'none',
-                          userSelect: 'none',
-                          WebkitTouchCallout: 'none',
-                        } as React.CSSProperties
-                      }
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        return false;
-                      }}
-                      title={actualTitle}
-                    >
-                      {actualTitle}
-                    </span>
+                    {titleLogo && !logoFailed ? (
+                      <img
+                        src={titleLogo}
+                        alt={actualTitle}
+                        draggable={false}
+                        className='block h-6 max-w-[65%] object-contain object-left'
+                        style={
+                          {
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                            pointerEvents: 'none',
+                            filter:
+                              'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6))',
+                          } as React.CSSProperties
+                        }
+                        onError={() => setLogoFailed(true)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          return false;
+                        }}
+                        title={actualTitle}
+                      />
+                    ) : (
+                      <span
+                        className='block text-sm font-bold truncate text-white'
+                        style={
+                          {
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none',
+                          } as React.CSSProperties
+                        }
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          return false;
+                        }}
+                        title={actualTitle}
+                      >
+                        {actualTitle}
+                      </span>
+                    )}
                   </div>
 
                   {/* 集数信息 - 只有超过1集时才显示 */}
@@ -1882,7 +2093,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
 
                 {/* 底部渐变遮罩 - 用于进度条背景 */}
                 <div
-                  className='absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-8 pb-2 px-2'
+                  className='absolute bottom-0 left-0 right-0 rounded-lg bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-8 pb-2 px-2'
                   style={
                     {
                       WebkitUserSelect: 'none',
@@ -1969,7 +2180,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                                 return false;
                               }}
                             >
-                              {source_name}
+                              {displaySourceName}
                             </span>
                           )}
                         </div>
@@ -2038,7 +2249,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                             size={8}
                             className='inline-block text-white/90 mr-0.5'
                           />
-                          {source_name}
+                          {displaySourceName}
                         </span>
                       </div>
                     )}
@@ -2171,7 +2382,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
               : undefined
           }
           isAggregate={isAggregate}
-          sourceName={cmsData ? undefined : source_name}
+          sourceName={cmsData ? undefined : displaySourceName}
           directLinkUrl={directLinkUrl || undefined}
           currentEpisode={currentEpisode}
           totalEpisodes={actualEpisodes}

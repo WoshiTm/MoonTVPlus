@@ -95,6 +95,11 @@ function DoubanPageClient() {
   // 每日放送视图模式：grid(卡片) / schedule(时刻表)
   const [viewMode, setViewMode] = useState<'grid' | 'schedule'>('grid');
 
+  // 每日放送：横图且无竖版可补的条目予以排除（与首页、时刻表一致）
+  const [hiddenBangumiIds, setHiddenBangumiIds] = useState<Set<string>>(
+    new Set()
+  );
+
   // 获取自定义分类数据
   useEffect(() => {
     const runtimeConfig = (window as any).RUNTIME_CONFIG;
@@ -322,6 +327,7 @@ function DoubanPageClient() {
               .map((item) => ({
                 id: item.id?.toString() || '',
                 title: item.name_cn || item.name,
+                originalTitle: item.name,
                 poster:
                   item.images.large ||
                   item.images.common ||
@@ -835,23 +841,44 @@ function DoubanPageClient() {
                     <DoubanCardSkeleton key={index} />
                   ))
                 : // 显示实际数据
-                  doubanData.map((item, index) => (
-                    <div key={`${item.title}-${index}`} className='w-full'>
-                      <VideoCard
-                        from='douban'
-                        title={item.title}
-                        poster={item.poster}
-                        douban_id={Number(item.id)}
-                        rate={item.rate}
-                        year={item.year}
-                        type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
-                        isBangumi={
-                          type === 'anime' && primarySelection === '每日放送'
-                        }
-                        isAnime={type === 'anime'}
-                      />
-                    </div>
-                  ))}
+                  doubanData
+                    .filter(
+                      (item) =>
+                        !(
+                          type === 'anime' &&
+                          primarySelection === '每日放送' &&
+                          hiddenBangumiIds.has(item.id)
+                        )
+                    )
+                    .map((item, index) => (
+                      <div
+                        key={`${item.title}-${index}`}
+                        className='w-full'
+                      >
+                        <VideoCard
+                          from='douban'
+                          title={item.title}
+                          originalTitle={item.originalTitle}
+                          onPortraitUnresolvable={() =>
+                            setHiddenBangumiIds((prev) => {
+                              if (prev.has(item.id)) return prev;
+                              const next = new Set(prev);
+                              next.add(item.id);
+                              return next;
+                            })
+                          }
+                          poster={item.poster}
+                          douban_id={Number(item.id)}
+                          rate={item.rate}
+                          year={item.year}
+                          type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+                          isBangumi={
+                            type === 'anime' && primarySelection === '每日放送'
+                          }
+                          isAnime={type === 'anime'}
+                        />
+                      </div>
+                    ))}
             </div>
           )}
 

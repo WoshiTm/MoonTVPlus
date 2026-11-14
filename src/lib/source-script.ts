@@ -710,6 +710,17 @@ export function parseScriptSourceValue(source: string) {
   };
 }
 
+export function joinScriptSourceName(
+  scriptName: string,
+  sourceName: string
+): string {
+  const script = (scriptName || '').trim();
+  const source = (sourceName || '').trim();
+  if (!script) return source;
+  if (!source || source === script) return script;
+  return `${script} / ${source}`;
+}
+
 export function normalizeScriptSources(result: any): ScriptSourceDescriptor[] {
   if (!Array.isArray(result)) {
     return [{ id: 'default', name: '默认源' }];
@@ -762,7 +773,7 @@ export function normalizeScriptSearchResults(input: {
       episodes,
       episodes_titles: titles,
       source: buildScriptSourceValue(input.scriptKey, input.sourceId),
-      source_name: `${input.scriptName} / ${input.sourceName}`,
+      source_name: joinScriptSourceName(input.scriptName, input.sourceName),
       year: item.year || '',
       desc: item.desc || '',
       type_name: item.type_name || '',
@@ -805,7 +816,7 @@ export function normalizeScriptRecommendResults(input: {
         ? item.episodes_titles
         : [],
       source: buildScriptSourceValue(input.scriptKey, sourceId),
-      source_name: `${input.scriptName} / ${sourceName}`,
+      source_name: joinScriptSourceName(input.scriptName, sourceName),
       year: item?.year || '',
       desc: item?.desc || '',
       type_name: item?.type_name || '',
@@ -884,7 +895,7 @@ export function normalizeScriptDetailResult(input: {
     episodes: flattenedEpisodes,
     episodes_titles: flattenedTitles,
     source: input.source,
-    source_name: `${input.scriptName} / ${input.sourceName}`,
+    source_name: joinScriptSourceName(input.scriptName, input.sourceName),
     class: input.result?.class,
     year: input.result?.year || '',
     desc: input.result?.desc || '',

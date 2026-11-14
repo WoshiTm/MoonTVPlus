@@ -80,12 +80,20 @@ function pickPoster(item: BangumiScheduleItem): string {
 }
 
 /** 单条时刻表条目：固定宽度 + 复用 VideoCard（与网格卡片行为一致） */
-function TimelineVideoCard({ item }: { item: BangumiScheduleItem }) {
+function TimelineVideoCard({
+  item,
+  onPortraitUnresolvable,
+}: {
+  item: BangumiScheduleItem;
+  onPortraitUnresolvable?: () => void;
+}) {
   return (
     <div className='w-32 sm:w-40 shrink-0'>
       <VideoCard
         from='douban'
         title={item.name_cn || item.name}
+        originalTitle={item.name}
+        onPortraitUnresolvable={onPortraitUnresolvable}
         poster={pickPoster(item)}
         douban_id={Number(item.id)}
         rate={item.rating}
@@ -111,6 +119,16 @@ function BangumiScheduleTimeline({
   const [data, setData] = useState<BangumiScheduleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 横图且无竖版可补的条目予以排除（与首页、列表一致）
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const hideItem = (id: string) => {
+    setHiddenIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
 
   const load = () => {
     setLoading(true);
@@ -155,12 +173,27 @@ function BangumiScheduleTimeline({
   const day = data.days[dayIndex] ?? data.days[0];
   if (!day) return null;
 
+  // 该星期在当前周的日历日期（如 11月16日），未知时间栏目的标题改显示日期
+  const today = new Date();
+  const mondayOffset = (today.getDay() + 6) % 7;
+  const dayDate = new Date(today);
+  dayDate.setDate(today.getDate() - mondayOffset + dayIndex);
+  const dayDateLabel = `${dayDate.getMonth() + 1}月${dayDate.getDate()}日`;
+
   // 未知放送时间的条目归属到当天（BGM 有星期、只是没有精确时刻）。
   // 优先用服务端按天分好组的 day.unknown；兼容旧响应退回按 weekday 过滤。
   const dayUnknown = Array.isArray(day.unknown)
     ? day.unknown
     : data.unknown.filter((it) => it.weekday === dayIndex);
-  const hasAny = day.slots.length > 0 || dayUnknown.length > 0;
+  // 排除横图且无竖版可补的条目：计数与渲染都按过滤后的来
+  const visibleSlots = day.slots
+    .map((s) => ({
+      ...s,
+      items: s.items.filter((it) => !hiddenIds.has(it.id)),
+    }))
+    .filter((s) => s.items.length > 0);
+  const visibleUnknown = dayUnknown.filter((it) => !hiddenIds.has(it.id));
+  const hasAny = visibleSlots.length > 0 || visibleUnknown.length > 0;
 
   return (
     <div className='space-y-6'>
@@ -181,19 +214,19 @@ function BangumiScheduleTimeline({
               </span>
               <span className='text-xs text-gray-400 dark:text-gray-500'>
                 {day.en} · 共{' '}
-                {day.slots.reduce((n, s) => n + s.items.length, 0) +
-                  dayUnknown.length}{' '}
+                {visibleSlots.reduce((n, s) => n + s.items.length, 0) +
+                  visibleUnknown.length}{' '}
                 部
               </span>
             </div>
 
-            {day.slots.length === 0 ? (
+            {visibleSlots.length === 0 ? (
               <div className='pl-[6.25rem] sm:pl-[6.5rem] text-xs text-gray-400 dark:text-gray-500'>
                 暂无固定放送时刻
               </div>
             ) : (
               <div className='space-y-5'>
-                {day.slots.map((slot) => (
+                {visibleSlots.map((slot) => (
                   <div
                     key={slot.time}
                     className='relative grid grid-cols-[4.5rem_1.5rem_1fr] sm:grid-cols-[5rem_1.5rem_1fr] items-start'
@@ -209,7 +242,11 @@ function BangumiScheduleTimeline({
                     {/* 同一时间多部番横向排列 */}
                     <div className='flex gap-3 overflow-x-auto pb-1 -mr-2 pr-2'>
                       {slot.items.map((item) => (
-                        <TimelineVideoCard key={item.id} item={item} />
+                        <TimelineVideoCard
+                          key={item.id}
+                          item={item}
+                          onPortraitUnresolvable={() => hideItem(item.id)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -219,19 +256,23 @@ function BangumiScheduleTimeline({
           </div>
 
           {/* 该日未知放送时间：与已知时间轴切断开（虚线分隔） */}
-          {dayUnknown.length > 0 && (
+          {visibleUnknown.length > 0 && (
             <section className='mt-4 border-t-2 border-dashed border-gray-300 dark:border-gray-600 pt-6'>
               <h3 className='flex items-baseline gap-2 mb-5'>
                 <span className='text-base sm:text-lg font-semibold text-gray-800 dark:text-gray-200'>
-                  未知时间
+                  {dayDateLabel}
                 </span>
                 <span className='text-xs text-gray-400 dark:text-gray-500'>
-                  共 {dayUnknown.length} 部
+                  共 {visibleUnknown.length} 部
                 </span>
               </h3>
               <div className='flex flex-wrap gap-x-3 gap-y-10'>
-                {dayUnknown.map((item) => (
-                  <TimelineVideoCard key={item.id} item={item} />
+                {visibleUnknown.map((item) => (
+                  <TimelineVideoCard
+                    key={item.id}
+                    item={item}
+                    onPortraitUnresolvable={() => hideItem(item.id)}
+                  />
                 ))}
               </div>
             </section>

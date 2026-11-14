@@ -16,9 +16,51 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
   const { siteName } = useSite();
   return (
     <header
-      className='md:hidden fixed top-0 left-0 right-0 z-[999] w-full bg-white/70 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/70 dark:border-gray-700/50'
+      className='md:hidden fixed top-0 left-0 right-0 z-[999] w-full'
       style={{ paddingTop: 'var(--safe-top)' }}
     >
+      {/* 背景层：多层毛玻璃叠加、模糊强度向下递减，过渡自然无分界线（类原生）；内容层不受影响 */}
+      <div
+        aria-hidden='true'
+        className='pointer-events-none absolute inset-x-0 top-0 -bottom-6'
+      >
+        <div
+          className='absolute inset-0 bg-white/25 dark:bg-gray-900/25'
+          style={{
+            maskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+          }}
+        />
+        <div
+          className='absolute inset-0 backdrop-blur-[2px]'
+          style={{
+            maskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+          }}
+        />
+        <div
+          className='absolute inset-0 backdrop-blur-[6px]'
+          style={{
+            maskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent calc(100% - 8px))',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent calc(100% - 8px))',
+          }}
+        />
+        <div
+          className='absolute inset-0 backdrop-blur-md'
+          style={{
+            maskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent calc(100% - 16px))',
+            WebkitMaskImage:
+              'linear-gradient(to bottom, black calc(100% - 24px), transparent calc(100% - 16px))',
+          }}
+        />
+      </div>
       <div className='relative h-12 flex items-center justify-between px-4'>
         {/* 左侧：搜索按钮、返回按钮和设置按钮 */}
         <div className='flex items-center gap-2'>

@@ -358,6 +358,8 @@ export interface DoubanItem {
   poster: string;
   rate: string;
   year: string;
+  /** Bangumi 原名（仅每日放送条目携带，用于竖版封面解析） */
+  originalTitle?: string;
 }
 
 export interface DoubanResult {

@@ -41,6 +41,8 @@ export interface PlayRecord {
   source_name: string;
   year: string;
   cover: string;
+  /** TMDB 背景图（横图，继续观看卡片用；老记录可能没有） */
+  backdrop?: string;
   index: number; // 第几集
   total_episodes: number; // 总集数
   play_time: number; // 播放进度（秒）

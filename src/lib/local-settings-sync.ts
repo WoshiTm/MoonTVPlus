@@ -49,7 +49,6 @@ export const LOCAL_SETTINGS_KEYS: string[] = [
   'danmakuMaxCount',
   'danmaku_heatmap_disabled',
   'homeBannerEnabled',
-  'homeBannerHeightScale',
   'homeContinueWatchingEnabled',
   'homeModules',
   'danmakuTraditionalToSimplified',

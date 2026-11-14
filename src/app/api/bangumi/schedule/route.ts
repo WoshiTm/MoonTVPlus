@@ -155,8 +155,15 @@ export async function GET() {
       unknown: schedule.unknown.map(toScheduleItem),
     };
 
-    setBangumiScheduleMemoryCache(season, year, response);
-    await setBangumiScheduleDatabaseCache(season, year, response);
+    // 抓空保护：一条带时间的都没有时不写缓存，避免空结果被缓存 30 天
+    const timedCount = response.days.reduce(
+      (n, d) => n + d.slots.reduce((m, s) => m + s.items.length, 0),
+      0
+    );
+    if (timedCount > 0 || response.unknown.length === 0) {
+      setBangumiScheduleMemoryCache(season, year, response);
+      await setBangumiScheduleDatabaseCache(season, year, response);
+    }
 
     return NextResponse.json(response, {
       headers: { 'Cache-Control': 'public, max-age=3600' },

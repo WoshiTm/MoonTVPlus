@@ -335,6 +335,50 @@ function PlayPageClient() {
 
   // TMDB背景图
   const [tmdbBackdrop, setTmdbBackdrop] = useState<string | null>(null);
+  const tmdbLogoRef = useRef<string | null>(null);
+  const tmdbBackdropRef = useRef<string | null>(null);
+  // 保存播放记录时取最新背景图（保存函数经 ref 读值，避免闭包过期）
+  useEffect(() => {
+    tmdbBackdropRef.current = tmdbBackdrop;
+  }, [tmdbBackdrop]);
+
+  // 同步播放器片名 logo 图层：常驻显示；无 logo 时移除图层。
+  // 图层挂在 Artplayer 内部，全屏时仍在；播放器重建后由 ready 处理里重新同步。
+  // 竖屏全屏时 logo 改到实际画面上边缘上方一点（避开玻璃区），横屏与非全屏保持左上角。
+  const syncPlayerLogoLayer = () => {
+    const player = artPlayerRef.current;
+    if (!player) return;
+    try {
+      player.layers.remove('tmdb-logo');
+    } catch {
+      // 图层不存在时忽略
+    }
+    const logoUrl = tmdbLogoRef.current;
+    if (!logoUrl) return;
+    const safeUrl = logoUrl.replace(/"/g, '%22');
+    let top = 12;
+    if (isImmersiveFullscreen() && window.innerWidth < window.innerHeight) {
+      const video = player.video as HTMLVideoElement | undefined;
+      const frame = artRef.current;
+      if (video && frame && video.videoWidth > 0 && video.videoHeight > 0) {
+        const rect = frame.getBoundingClientRect();
+        const scale = Math.min(
+          rect.width / video.videoWidth,
+          rect.height / video.videoHeight
+        );
+        const pictureTop = (rect.height - video.videoHeight * scale) / 2;
+        // 画面上边缘上方 8px（logo 高 44）；画面顶到边缘时取 12px 底线
+        top = Math.max(12, pictureTop - 52);
+      } else {
+        // 元数据未到：先放 12px，ready 后重算
+        top = 12;
+      }
+    }
+    player.layers.add({
+      name: 'tmdb-logo',
+      html: `<img src="${safeUrl}" alt="" style="position:absolute;top:${top}px;left:12px;max-height:44px;max-width:180px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.6));" />`,
+    });
+  };
   // TMDB 分集名称（按 episode_number-1 索引），复用背景请求解析出的 tmdbId 获取
   const [tmdbEpisodeNames, setTmdbEpisodeNames] = useState<string[]>([]);
   // 背景请求解析出的 tmdbId 字符串（形如 "tv:123"），供拉取分集名复用
@@ -694,6 +738,24 @@ function PlayPageClient() {
   const [danmakuOriginalCount, setDanmakuOriginalCount] = useState(0);
   const danmakuPluginRef = useRef<any>(null);
   const danmakuSettingsRef = useRef(danmakuSettings);
+  // 弹幕选项卡里的显示设置：即时应用到插件并持久化
+  const updateDanmakuDisplaySettings = useCallback(
+    (patch: Partial<DanmakuSettings>) => {
+      const next = { ...danmakuSettingsRef.current, ...patch };
+      danmakuSettingsRef.current = next;
+      setDanmakuSettings(next);
+      saveDanmakuSettings(next);
+      if (danmakuPluginRef.current) {
+        danmakuPluginRef.current.config({
+          speed: next.speed,
+          opacity: next.opacity,
+          fontSize: next.fontSize,
+          margin: [next.marginTop, next.marginBottom],
+        });
+      }
+    },
+    []
+  );
 
   // 弹幕显示状态的 ref，初始化时从 localStorage 读取
   const danmakuDisplayStateRef = useRef<boolean>(
@@ -1575,6 +1637,8 @@ function PlayPageClient() {
     const fetchTMDBBackdrop = async () => {
       if (isDirectPlay) {
         setTmdbBackdrop(null);
+        tmdbLogoRef.current = null;
+        syncPlayerLogoLayer();
         setTmdbEpisodeNames([]);
         setResolvedTmdbIdStr(null);
         return;
@@ -1585,12 +1649,16 @@ function PlayPageClient() {
         const disabled = localStorage.getItem('tmdb_backdrop_disabled');
         if (disabled === 'true') {
           setTmdbBackdrop(null);
+          tmdbLogoRef.current = null;
+          syncPlayerLogoLayer();
           return;
         }
       }
 
       if (!videoTitle) {
         setTmdbBackdrop(null);
+        tmdbLogoRef.current = null;
+        syncPlayerLogoLayer();
         setTmdbEpisodeNames([]);
         setResolvedTmdbIdStr(null);
         return;
@@ -1608,12 +1676,29 @@ function PlayPageClient() {
           const detailsCacheKey = recommendationCacheKeys.tmdbDetails(cachedId);
           const detailsCache = getRecommendationCache<any>(detailsCacheKey);
 
-          if (detailsCache) {
+          // 旧版缓存没有 logo 字段时跳过缓存、重新拉取，避免无 logo 状态残留
+          if (
+            detailsCache &&
+            typeof detailsCache === 'object' &&
+            'logo' in detailsCache
+          ) {
             if (detailsCache.backdrop) {
               setTmdbBackdrop(processImageUrl(detailsCache.backdrop));
+              if (artPlayerRef.current) {
+                artPlayerRef.current.poster = processImageUrl(
+                  detailsCache.backdrop
+                );
+              }
             } else {
               setTmdbBackdrop(null);
+              if (artPlayerRef.current) {
+                artPlayerRef.current.poster = '';
+              }
             }
+            tmdbLogoRef.current = detailsCache.logo
+              ? processImageUrl(detailsCache.logo)
+              : null;
+            syncPlayerLogoLayer();
 
             if (!videoDoubanId || videoDoubanId === 0) {
               populateDoubanFieldsFromTMDB(detailsCache);
@@ -1632,6 +1717,8 @@ function PlayPageClient() {
 
         if (!response.ok) {
           setTmdbBackdrop(null);
+          tmdbLogoRef.current = null;
+          syncPlayerLogoLayer();
           return;
         }
 
@@ -1639,9 +1726,19 @@ function PlayPageClient() {
 
         if (result.backdrop) {
           setTmdbBackdrop(processImageUrl(result.backdrop));
+          if (artPlayerRef.current) {
+            artPlayerRef.current.poster = processImageUrl(result.backdrop);
+          }
         } else {
           setTmdbBackdrop(null);
+          if (artPlayerRef.current) {
+            artPlayerRef.current.poster = '';
+          }
         }
+        tmdbLogoRef.current = result.logo
+          ? processImageUrl(result.logo)
+          : null;
+        syncPlayerLogoLayer();
 
         // 如果没有豆瓣ID，使用TMDb数据补充
         if (!videoDoubanId || videoDoubanId === 0) {
@@ -1665,6 +1762,8 @@ function PlayPageClient() {
       } catch (error) {
         console.error('获取TMDB背景图失败:', error);
         setTmdbBackdrop(null);
+        tmdbLogoRef.current = null;
+        syncPlayerLogoLayer();
       }
     };
 
@@ -2521,22 +2620,52 @@ function PlayPageClient() {
     const wrap = artRef.current?.parentElement;
     if (!wrap) return;
     wrap.classList.add('ios-pwa-immersive');
+    // 全屏时 html 挂黑底，把玻璃染暗（固定深色，不随日夜切换）
+    document.documentElement.classList.add('ios-immersive-tint');
+    setIsWebFullscreen(true);
     document.body.style.overflow = 'hidden';
-    // 尺寸变了，催播放器重算（弹幕画布、Anime4K 画布都依赖 resize）
+    // 催播放器重算（弹幕画布、Anime4K 画布都依赖 resize）
     window.dispatchEvent(new Event('resize'));
+    // logo 位置随全屏状态变化，立即重算（resize 监听是防抖的）
+    syncPlayerLogoLayer();
   };
   const exitImmersiveFullscreen = () => {
-    artRef.current?.parentElement?.classList.remove('ios-pwa-immersive');
+    const wrap = artRef.current?.parentElement;
+    wrap?.classList.remove('ios-pwa-immersive');
+    document.documentElement.classList.remove('ios-immersive-tint');
+    setIsWebFullscreen(false);
     document.body.style.removeProperty('overflow');
     window.dispatchEvent(new Event('resize'));
+    // 退出后把 logo 位置恢复
+    syncPlayerLogoLayer();
   };
   // 卸载兜底：用户在全屏里直接返回时，把 body 滚动锁和类名清掉
   useEffect(() => {
     return () => {
       artRef.current?.parentElement?.classList.remove('ios-pwa-immersive');
       document.body.style.removeProperty('overflow');
+      document.documentElement.classList.remove('ios-immersive-tint');
     };
   }, []);
+
+  // 转屏/尺寸变化时重算 logo 位置（防抖：旋转过程会连续触发 resize）
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onViewportChange = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        syncPlayerLogoLayer();
+      }, 150);
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', onViewportChange);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('orientationchange', onViewportChange);
+    };
+  }, []);
+
   const activeHarmonyHlsPlaybackModeRef =
     useRef<HarmonyHlsPlaybackMode | null>(null);
   const activeNetdiskHlsPlaybackModeRef =
@@ -6116,6 +6245,7 @@ function PlayPageClient() {
             source_name: newDetail.source_name || '',
             year: newDetail.year || '',
             cover: finalCover || '',
+            backdrop: tmdbBackdropRef.current || '',
             index: targetIndex + 1,
             total_episodes: newDetail.episodes?.length || 1,
             play_time: Math.floor(resumeTime),
@@ -7082,6 +7212,7 @@ function PlayPageClient() {
         source_name: detailRef.current?.source_name || '',
         year: detailRef.current?.year,
         cover: detailRef.current?.poster || '',
+        backdrop: tmdbBackdropRef.current || '',
         index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
         total_episodes: detailRef.current?.episodes.length || 1,
         play_time: playTime,
@@ -7393,7 +7524,7 @@ function PlayPageClient() {
       }
       artPlayerRef.current.switch = videoUrl;
       artPlayerRef.current.title = `${videoTitle} - ${playerEpisodeLabel}`;
-      artPlayerRef.current.poster = videoCover;
+      artPlayerRef.current.poster = tmdbBackdrop || '';
       if (artPlayerRef.current?.video) {
         const exposedVideoUrl =
           isNetdiskNativeHlsActive(currentSourceRef.current)
@@ -7598,7 +7729,7 @@ function PlayPageClient() {
           container: artRef.current!,
           url: videoUrl,
           ...(getVideoType(videoUrl) ? { type: getVideoType(videoUrl) } : {}),
-          poster: videoCover,
+          poster: tmdbBackdrop || '',
           volume: 0.7,
           isLive: false,
           muted: false,
@@ -8470,7 +8601,7 @@ function PlayPageClient() {
             {
               position: 'left',
               index: 40,
-              html: `<i class="art-icon flex quick-forward-control"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m16 17 5-5-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></i>`,
+              html: `<i class="art-icon flex quick-forward-control"><svg width="22" height="22" viewBox="1 1 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m16 17 5-5-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></i>`,
               tooltip: '快捷快进',
               mounted: ($el: HTMLElement) => {
                 $el.classList.add('quick-forward-control-wrapper');
@@ -8511,7 +8642,7 @@ function PlayPageClient() {
             ...(isIOS ? [{
               position: 'right',
               index: 100,  // 大数字确保在设置按钮右边
-              html: '<i class="art-icon ios-portrait-fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg></i>',
+              html: '<i class="art-icon ios-portrait-fullscreen"><svg width="22" height="22" viewBox="1 1 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg></i>',
               tooltip: '全屏',
               style: {
                 color: '#fff',
@@ -8742,9 +8873,8 @@ function PlayPageClient() {
                   return;
                 }
 
-                // PWA 下自绘全屏：iPhone 上 requestFullscreen 对普通元素无效；
-                // 原来这里调 $container.webkitEnterFullscreen() 是死代码（div 没这方法），
-                // 恒为假 → 永远退化成 fullscreenWeb → 竖屏不转、画面缩在中间。
+                // PWA 下自绘全屏：满视口盒子 + 按需自动转屏 + 藏顶栏底栏；
+                // 不走 fullscreenWeb（它的旋转按安全区缩进，主屏幕下会露页面）。
                 if (isPWA) {
                   if (isImmersiveFullscreen()) {
                     exitImmersiveFullscreen();
@@ -8895,6 +9025,9 @@ function PlayPageClient() {
           // 标记播放器已就绪，触发 usePlaySync 设置事件监听器
           setPlayerReady(true);
           console.log('[PlayPage] Player ready, triggering sync setup');
+
+          // 播放器重建后恢复左上角片名 logo 图层（常驻显示）
+          syncPlayerLogoLayer();
 
           // 应用进度条图标配置 - 尽早执行
           const applyProgressThumbConfig = () => {
@@ -10664,7 +10797,8 @@ function PlayPageClient() {
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
-            filter: 'blur(5px) brightness(0.7)',
+            filter: 'blur(40px) brightness(0.65)',
+            transform: 'scale(1.15)',
           }}
         />
       )}
@@ -11677,6 +11811,8 @@ function PlayPageClient() {
                 precomputedVideoInfo={precomputedVideoInfo}
                 useLightTextOnBackdrop={!!tmdbBackdrop}
                 onDanmakuSelect={(selection) => handleDanmakuSelect(selection, true)}
+                danmakuSettings={danmakuSettings}
+                onDanmakuDisplaySettingsChange={updateDanmakuDisplaySettings}
                 onDanmakuEpisodesLoaded={applyDanmakuEpisodes}
                 currentDanmakuSelection={currentDanmakuSelection}
                 onUploadDanmaku={handleUploadDanmaku}

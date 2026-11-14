@@ -4,7 +4,7 @@ import { DbManager } from '@/lib/db';
 
 const MEMORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DATABASE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const DATABASE_CACHE_KEY_PREFIX = 'bangumi:schedule:';
+const DATABASE_CACHE_KEY_PREFIX = 'bangumi:schedule:v2:';
 
 export interface BangumiScheduleCacheEntry<T> {
   season: string;
